@@ -1,5 +1,5 @@
 -module(ty_ref).
--vsn({1,1,0}).
+-vsn({1,2,0}).
 
 -export([any/0, store/1, load/1, new_ty_ref/0, define_ty_ref/2, is_empty_cached/1, store_is_empty_cached/2]).
 
@@ -22,11 +22,12 @@ setup_ets() ->
     ok = define_any(),
 
     % memoize ANY as not empty
-    ets:insert(?EMPTY_CACHE, {ty_rec:any(), false}),
+    {ty_ref, AnyId} = ty_rec:any(),
+    ets:insert(?EMPTY_CACHE, {AnyId, false}),
 
     % memoize EMPTY as empty
-    ets:insert(?EMPTY_CACHE, {ty_rec:empty(), true}),
-
+    {ty_ref, EmptyId} = ty_rec:empty(),
+    ets:insert(?EMPTY_CACHE, {EmptyId, true}),
 
     receive _ -> ok end
         end),
@@ -42,16 +43,31 @@ define_any() ->
   DnfTupleAny = dnf_ty_tuple:tuple(TupleAny),
   DnfVarTupleAny = dnf_var_ty_tuple:tuple(DnfTupleAny),
 
+  % create function top (co-inductive)
+  % TODO 0 -> t is empty for every t;
+  % does it make any difference to set t to something else other than empty or any?
+  FunctionAny = ty_function:function(ty_rec:empty(), ty_rec:empty()),
+  DnfFunctionAny = dnf_ty_function:function(FunctionAny),
+  DnfVarFunctionAny = dnf_var_ty_function:function(DnfFunctionAny),
+
   % create interval top
   DnfVarIntervalAny = dnf_var_int:any(),
+
+  % create atom top
+  DnfVarAtomAny = dnf_var_ty_atom:any(),
 
   % union
   Ty1   = ty_rec:interval(DnfVarIntervalAny),
   Ty2   = ty_rec:tuple(DnfVarTupleAny),
-  TyAny = ty_rec:union(Ty1, Ty2),
+  Ty3   = ty_rec:atom(DnfVarAtomAny),
+  Ty4   = ty_rec:function(DnfVarFunctionAny),
+
+  U1 = ty_rec:union(Ty1, Ty2),
+  U2 = ty_rec:union(U1, Ty3),
+  U = ty_rec:union(U2, Ty4),
 
   % define
-  ty_ref:define_ty_ref(Any, ty_ref:load(TyAny)),
+  ty_ref:define_ty_ref(Any, ty_ref:load(U)),
 
   ok.
 
@@ -78,7 +94,6 @@ load({ty_ref, Id}) ->
 load(Ty) -> erlang:error({unknown_load_ty_ref, Ty}).
 
 store(Ty) ->
-
   Object = ets:lookup(?TY_UNIQUE_TABLE, Ty),
   case Object of
     [] ->

@@ -1,7 +1,7 @@
--module(dnf_var_ty_tuple).
+-module(dnf_var_ty_function).
 -vsn({1,2,0}).
 
--define(P, {dnf_ty_tuple, ty_variable}).
+-define(P, {dnf_ty_function, ty_variable}).
 
 -behavior(eq).
 -export([equal/2, compare/2]).
@@ -10,17 +10,17 @@
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([eval/1, is_empty/1, is_any/1]).
 
--export([var/1, tuple/1]).
+-export([var/1, function/1]).
 
--type dnf_tuple() :: term().
--type ty_tuple() :: dnf_tuple(). % ty_tuple:type()
+-type dnf_function() :: term().
+-type ty_function() :: dnf_function(). % ty_function:type()
 -type variable() :: term(). % variable:type()
--type dnf_var_tuple() :: term().
+-type dnf_var_function() :: term().
 
--spec tuple(ty_tuple()) -> dnf_var_tuple().
-tuple(Tuple) -> gen_bdd:terminal(?P, Tuple).
+-spec function(ty_function()) -> dnf_var_function().
+function(Tuple) -> gen_bdd:terminal(?P, Tuple).
 
--spec var(variable()) -> dnf_var_tuple().
+-spec var(variable()) -> dnf_var_function().
 var(Var) -> gen_bdd:element(?P, Var).
 
 % ==
@@ -47,8 +47,8 @@ compare(B1, B2) -> gen_bdd:compare(?P, B1, B2).
 
 % TODO memoize α1∧…∧αn ∧ ¬β1∧…∧¬βm ∧ t
 is_empty(0) -> true;
-is_empty({terminal, Tuple}) ->
-  dnf_ty_tuple:is_empty(Tuple);
+is_empty({terminal, Function}) ->
+  dnf_ty_function:is_empty(Function);
 is_empty({node, _Variable, PositiveEdge, NegativeEdge}) ->
   is_empty(PositiveEdge)
     and is_empty(NegativeEdge).
@@ -59,21 +59,21 @@ is_empty({node, _Variable, PositiveEdge, NegativeEdge}) ->
 -include_lib("eunit/include/eunit.hrl").
 
 usage_test() ->
-  %   a1 ^ (int, int)
+  %   a1 ^ (int -> int)
   TIa = ty_rec:interval(dnf_var_int:int(ty_interval:interval('*', '*'))),
   TIb = ty_rec:interval(dnf_var_int:int(ty_interval:interval('*', '*'))),
-  Ty_Tuple = ty_tuple:tuple(TIa, TIb),
+  Ty_Function = ty_function:function(TIa, TIb),
 
   VarA = ty_variable:new("a1"),
 
-  Dnf_Ty_Tuple = dnf_ty_tuple:tuple(Ty_Tuple),
+  Dnf_Ty_Function = dnf_ty_function:function(Ty_Function),
 
-  BVar1 = dnf_var_ty_tuple:var(VarA),
-  BTupleA = dnf_var_ty_tuple:tuple(Dnf_Ty_Tuple),
+  BVar1 = dnf_var_ty_function:var(VarA),
+  BFunctionA = dnf_var_ty_function:function(Dnf_Ty_Function),
 
-  Bdd = dnf_var_ty_tuple:intersect(BVar1, BTupleA),
+  Bdd = dnf_var_ty_function:intersect(BVar1, BFunctionA),
 
-  false = dnf_var_int:is_empty(Bdd),
+  false = dnf_var_ty_function:is_empty(Bdd),
 %%  io:format(user, "~p~n", [Bdd]),
 
   ok.

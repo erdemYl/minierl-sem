@@ -77,10 +77,10 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 subty(T1, T2) ->
   ty_rec:is_subtype(ast:norm(T1), ast:norm(T2)).
 
+b(Atom) -> {'atom', Atom}.
 
 % type constructors
-a() -> atom.
-a(Atom) -> {atom, Atom}.
+f(X, Y) -> {'fun', X, Y}.
 
 v(VariableName) -> {var, VariableName}.
 
@@ -88,16 +88,23 @@ v(VariableName) -> {var, VariableName}.
 r() -> int.
 r(X) -> {integer, X}.
 
+t(X, Y) -> {'tuple', X, Y}.
+
+
 any() -> any.
 none() -> none.
 
+u(X, Y) -> {union, X, Y}.
 u([]) -> none();
 u([X]) -> X;
 u([X,Y | T]) -> {union, X, u([Y | T])}.
 
+i(X, Y) -> {intersection, X, Y}.
 i([]) -> any();
 i([X]) -> X;
 i([X,Y | T]) -> {intersection, X, i([Y | T])}.
+
+n(X) -> {negation, X}.
 
 % ==================
 % ast:ty() -> ty_rec:ty()
@@ -109,99 +116,36 @@ i([X,Y | T]) -> {intersection, X, i([Y | T])}.
 % the variable intersected with each disjunct unions top-type
 % ===============================
 
-% ty_base
 norm(int) ->
   Int = dnf_var_int:any(),
   ty_rec:interval(Int);
-%%norm({atom, Atom}) ->
-%%  erlang:error("TODO").
-%%  (empty())#ty{atoms = bdd_lazy:pos({bdd_atom, Atom})};
-%%norm({singleton, IntOrChar}) ->
-%%  % Char is subset of Int
-%%  (empty())#ty{ints = bdd_lazy:pos({bdd_range, IntOrChar, IntOrChar})};
-%%
-%%% ty_bitstring % TODO
-%%norm({binary, _, _}) -> erlang:error("Bitstrings not supported yet");
-%%
-%%norm({tuple_any}) -> (empty())#ty{prod = rep_map_any()};
-%%norm({tuple, Components}) ->
-%%  Normed = [norm(Ty) || Ty <- Components],
-%%  Tuple = #{length(Components) => bdd_lazy:pos({bdd_tuple, Normed})},
-%%  (empty())#ty{prod = {bdd_lazy:empty(), Tuple}};
-%%
-%%% funs
-%%norm({fun_simple}) ->
-%%  (empty())#ty{arrw = {bdd_lazy:any(), #{}}};
-%%norm({fun_full, Components, Result}) ->
-%%  Normed = [norm(Ty) || Ty <- Components],
-%%  Function = #{length(Components) => bdd_lazy:pos({bdd_fun_full, Normed, norm(Result)})},
-%%  (empty())#ty{arrw = {bdd_lazy:empty(), Function}};
-%%
-%%
-% var
+norm({'atom', Atom}) ->
+  TyAtom = ty_atom:finite([Atom]),
+  TAtom = dnf_var_ty_atom:ty_atom(TyAtom),
+  ty_rec:atom(TAtom);
 norm({var, A}) ->
   Var = maybe_new_variable(A),
   ty_rec:variable(Var);
+norm({tuple, A, B}) ->
+  TyA = norm(A),
+  TyB = norm(B),
 
-%%
-%%% ty_some_list
-%%norm({list, Ty}) ->
-%%  union(
-%%    norm({improper_list, Ty, {empty_list}}),
-%%    norm({empty_list})
-%%  );
-%%norm({nonempty_list, Ty}) -> norm({nonempty_improper_list, Ty, {empty_list}});
-%%norm({nonempty_improper_list, Ty, Term}) -> diff(norm({list, Ty}), norm(Term));
-%%norm({improper_list, Ty, Term}) ->
-%%  (empty())#ty{ list = bdd_lazy:pos({bdd_list, norm(Ty), norm(Term)}) };
-%%
-%%norm({empty_list}) ->
-%%  (empty())#ty{special = bdd_lazy:pos({bdd_spec, empty_list})};
-%%norm({predef, T}) when T == pid; T == port; T == reference; T == float ->
-%%  (empty())#ty{special = bdd_lazy:pos({bdd_spec, T})};
-%%
-%%% named
-%%norm({named, _, Ref, Args}) ->
-%%  V = {bdd_named, {Ref, Args}},
-%%  (any())#ty{
-%%    atoms = bdd_lazy:pos(V),
-%%    ints = bdd_lazy:pos(V),
-%%    special = bdd_lazy:pos(V),
-%%    list = bdd_lazy:pos(V),
-%%    prod = {bdd_lazy:pos(V), #{}},
-%%    arrw = {bdd_lazy:pos(V), #{}}
-%%  };
-%%
-%%% ty_predef_alias
-%%norm({predef_alias, Alias}) ->
-%%  Expanded = stdtypes:expand_predef_alias(Alias),
-%%  norm(Expanded);
-%%
-%%% ty_predef
-%%norm({predef, atom}) ->
-%%  (empty())#ty{atoms = bdd_lazy:any()};
-%%
-%%norm({predef, any}) -> any();
-%%norm({predef, none}) -> empty();
-%%norm({predef, integer}) ->
-%%  (empty())#ty{ints = bdd_lazy:pos({bdd_range, '*', '*'})};
-%%
-%%% ints
+  T = dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(TyA, TyB))),
+  ty_rec:tuple(T);
+norm({'fun', A, B}) ->
+  TyA = norm(A),
+  TyB = norm(B),
+
+  T = dnf_var_ty_function:function(dnf_ty_function:function(ty_function:function(TyA, TyB))),
+  ty_rec:function(T);
 norm({integer, I}) ->
   Int = dnf_var_int:int(ty_interval:interval(I, I)),
   ty_rec:interval(Int);
-
 norm(any) -> ty_rec:any();
 norm(none) -> ty_rec:empty();
-
 norm({union, A, B}) -> ty_rec:union(norm(A), norm(B));
-norm({intersection, A, B}) -> ty_rec:intersect(norm(A), norm(B)).
-
-%%norm({negation, Ty}) -> negate(norm(Ty));
-%%
-%%norm(T) ->
-%%  logger:error("Norm not implemented for~n~p", [T]),
-%%  erlang:error("Norm not implemented, see error log").
+norm({intersection, A, B}) -> ty_rec:intersect(norm(A), norm(B));
+norm({negation, A}) -> ty_rec:negate(norm(A)).
 
 
 maybe_new_variable(Name) ->

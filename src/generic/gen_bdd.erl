@@ -1,5 +1,5 @@
 -module(gen_bdd).
--vsn({1,1,0}).
+-vsn({1,2,0}).
 
 % A generic BDD parameterized over both the 'nodes and 'leafs: BDD<Element, Terminal>
 %
@@ -121,13 +121,4 @@ terminal_of({Terminal, _}, Ty) ->
 s(_G, {node, _, B, B}) -> B;
 s(_G, X) -> X.
 
-
-
-
-%%is_empty({Terminal, Element}, T) ->
-%%  io:format(user, "Checking emptyness~n~p~n~p", [P, T]),
-%%  erlang:error("TODO").
-
-is_empty({ty_interval, ty_variable}, T) ->
-  io:format(user, "Checking emptyness~n~p~n~p", ["var interval DNF", T]),
-  erlang:error("TODO").
+is_empty(P, _) -> erlang:error({"implement above", P}).

@@ -19,7 +19,7 @@ V 1.0 Basic
 
 * [ ] v1 basic architecture
   * AST test spec defined
-  * 2-tuples, intervals
+  * arrows, 2-tuples, intervals
   * generic bdd
   * recursive types via type references
   * hash-consing of types
@@ -37,13 +37,13 @@ Next
  
 * [ ] 2.0 
   * hash-consing of BDD
-  * tallying
+  * hash-consing of BDD operations
    
 * [ ] 3.0
-  * typing ?
+  * tallying
 
 * [ ] 4.0 
-  * types: arrows, base, atoms
+  * types: base, atoms
   * 
 * [ ] 5.0 
   * types: tuples, functions
