@@ -1,5 +1,5 @@
 -module(dnf_var_int).
--vsn({1,0,0}).
+-vsn({1,1,0}).
 
 -define(P, {ty_interval, ty_variable}).
 
@@ -34,8 +34,9 @@ diff(B1, B2) -> gen_bdd:diff(?P, B1, B2).
 negate(B1) -> gen_bdd:negate(?P, B1).
 
 eval(B) -> gen_bdd:eval(?P, B).
-is_empty(B) -> gen_bdd:is_empty(?P, B).
 is_any(B) -> gen_bdd:is_any(?P, B).
+
+
 
 % ==
 % basic interface
@@ -44,6 +45,17 @@ is_any(B) -> gen_bdd:is_any(?P, B).
 equal(B1, B2) -> gen_bdd:equal(?P, B1, B2).
 compare(B1, B2) -> gen_bdd:compare(?P, B1, B2).
 
+
+% ==
+% Emptyness for variable interval DNFs
+% ==
+
+is_empty(0) -> true;
+is_empty({terminal, Interval}) ->
+  ty_interval:is_empty(Interval);
+is_empty({node, _Variable, PositiveEdge, NegativeEdge}) ->
+  is_empty(PositiveEdge)
+    andalso is_empty(NegativeEdge).
 
 
 -ifdef(TEST).
@@ -74,7 +86,8 @@ usage_test() ->
 
   Bdd = dnf_var_int:union(dnf_var_int:union(U1, U2), U3),
 
-  io:format(user, "~p~n", [Bdd]),
+%%  io:format(user, "~p~n", [Bdd]),
+  false = dnf_var_int:is_empty(Bdd),
 
   ok.
 
@@ -89,7 +102,8 @@ compact_ints_test() ->
 
   Bdd = dnf_var_int:union(BIntA, BIntB),
 
-  io:format(user, "~p~n", [Bdd]),
+%%  io:format(user, "~p~n", [Bdd]),
+  false = dnf_var_int:is_empty(Bdd),
 
   ok.
 

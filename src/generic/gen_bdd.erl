@@ -1,5 +1,5 @@
 -module(gen_bdd).
--vsn({1,0,0}).
+-vsn({1,1,0}).
 
 % A generic BDD parameterized over both the 'nodes and 'leafs: BDD<Element, Terminal>
 %
@@ -106,8 +106,6 @@ intersect(I, A, B) -> negate(I, union(I, negate(I, A), negate(I, B))).
 is_any({Terminal, _}, {terminal, Ty}) -> Terminal:equal(Ty, Terminal:any());
 is_any(_, _) -> false.
 
-is_empty(_, 0) -> true;
-is_empty(_, _) -> false. % TODO ?
 
 % TODO
 eval(_,_) -> erlang:error("TODO").
@@ -122,3 +120,14 @@ terminal_of({Terminal, _}, Ty) ->
 
 s(_G, {node, _, B, B}) -> B;
 s(_G, X) -> X.
+
+
+
+
+%%is_empty({Terminal, Element}, T) ->
+%%  io:format(user, "Checking emptyness~n~p~n~p", [P, T]),
+%%  erlang:error("TODO").
+
+is_empty({ty_interval, ty_variable}, T) ->
+  io:format(user, "Checking emptyness~n~p~n~p", ["var interval DNF", T]),
+  erlang:error("TODO").

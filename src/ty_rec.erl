@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({1,0,0}).
+-vsn({1,1,0}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -7,15 +7,25 @@
 -export([is_empty/1, eval/1]).
 
 % additional type constructors
--export([interval/1, tuple/1]).
+-export([variable/1, interval/1, tuple/1]).
+
+-export([is_subtype/2]).
 
 -record(ty, {interval, tuple}).
 
 -type ty_ref() :: {ty_ref, integer()}.
 -type interval() :: term().
 -type ty_tuple() :: term().
+-type ty_variable() :: term().
 
-% TODO memoize that common ANY types are not empty, e.g. ANY
+
+% ======
+% top-level API
+% ======
+
+is_subtype(TyRef1, TyRef2) ->
+  NewTy = intersect(TyRef1, ty_rec:negate(TyRef2)),
+  is_empty(NewTy).
 
 % ======
 % Type constructors
@@ -28,6 +38,15 @@ empty() ->
 -spec any() -> ty_ref().
 any() ->
   ty_ref:any().
+
+-spec variable(ty_variable()) -> ty_ref().
+variable(Var) ->
+  Any = ty_ref:load(any()),
+
+  ty_ref:store(Any#ty{
+    interval = dnf_var_int:intersect(Any#ty.interval, dnf_var_int:var(Var)),
+    tuple = dnf_var_ty_tuple:intersect(Any#ty.tuple, dnf_var_ty_tuple:var(Var))
+  }).
 
 -spec interval(interval()) -> ty_ref().
 interval(Interval) ->
@@ -74,119 +93,6 @@ union(A, B) -> negate(intersect(negate(A), negate(B))).
 
 
 
-%%% ==================
-%%% ast:ty() -> BDD  |
-%%% ==================
-%%%
-%%% Conversion of a type into a BDD representation
-%%% Puts the parsed type into an empty BDD
-%%%
-%%% Conversion is complete, i.e. it recursively parses all inside nodes of
-%%% tuples and functions
-%%%
-%%%
-%%% Type variables are represented as
-%%% the variable intersected with each disjunct unions top-type
-%%%
-%%% named references are saved in each partition as well and are unfolded on demand
-%%% ===============================
-%%
-%%% ty_singleton
-%%norm({singleton, Atom}) when is_atom(Atom) ->
-%%  (empty())#ty{atoms = bdd_lazy:pos({bdd_atom, Atom})};
-%%norm({singleton, IntOrChar}) ->
-%%  % Char is subset of Int
-%%  (empty())#ty{ints = bdd_lazy:pos({bdd_range, IntOrChar, IntOrChar})};
-%%
-%%% ty_bitstring % TODO
-%%norm({binary, _, _}) -> erlang:error("Bitstrings not supported yet");
-%%
-%%norm({tuple_any}) -> (empty())#ty{prod = rep_map_any()};
-%%norm({tuple, Components}) ->
-%%  Normed = [norm(Ty) || Ty <- Components],
-%%  Tuple = #{length(Components) => bdd_lazy:pos({bdd_tuple, Normed})},
-%%  (empty())#ty{prod = {bdd_lazy:empty(), Tuple}};
-%%
-%%% funs
-%%norm({fun_simple}) ->
-%%  (empty())#ty{arrw = {bdd_lazy:any(), #{}}};
-%%norm({fun_full, Components, Result}) ->
-%%  Normed = [norm(Ty) || Ty <- Components],
-%%  Function = #{length(Components) => bdd_lazy:pos({bdd_fun_full, Normed, norm(Result)})},
-%%  (empty())#ty{arrw = {bdd_lazy:empty(), Function}};
-%%
-%%
-%%% var
-%%norm({var, A}) ->
-%%  V = {bdd_var, A},
-%%  (any())#ty{
-%%    atoms = bdd_lazy:pos(V),
-%%    ints = bdd_lazy:pos(V),
-%%    special = bdd_lazy:pos(V),
-%%    list = bdd_lazy:pos(V),
-%%    prod = {bdd_lazy:pos(V), #{}},
-%%    arrw = {bdd_lazy:pos(V), #{}}
-%%  };
-%%
-%%% ty_some_list
-%%norm({list, Ty}) ->
-%%  union(
-%%    norm({improper_list, Ty, {empty_list}}),
-%%    norm({empty_list})
-%%  );
-%%norm({nonempty_list, Ty}) -> norm({nonempty_improper_list, Ty, {empty_list}});
-%%norm({nonempty_improper_list, Ty, Term}) -> diff(norm({list, Ty}), norm(Term));
-%%norm({improper_list, Ty, Term}) ->
-%%  (empty())#ty{ list = bdd_lazy:pos({bdd_list, norm(Ty), norm(Term)}) };
-%%
-%%norm({empty_list}) ->
-%%  (empty())#ty{special = bdd_lazy:pos({bdd_spec, empty_list})};
-%%norm({predef, T}) when T == pid; T == port; T == reference; T == float ->
-%%  (empty())#ty{special = bdd_lazy:pos({bdd_spec, T})};
-%%
-%%% named
-%%norm({named, _, Ref, Args}) ->
-%%  V = {bdd_named, {Ref, Args}},
-%%  (any())#ty{
-%%    atoms = bdd_lazy:pos(V),
-%%    ints = bdd_lazy:pos(V),
-%%    special = bdd_lazy:pos(V),
-%%    list = bdd_lazy:pos(V),
-%%    prod = {bdd_lazy:pos(V), #{}},
-%%    arrw = {bdd_lazy:pos(V), #{}}
-%%  };
-%%
-%%% ty_predef_alias
-%%norm({predef_alias, Alias}) ->
-%%  Expanded = stdtypes:expand_predef_alias(Alias),
-%%  norm(Expanded);
-%%
-%%% ty_predef
-%%norm({predef, atom}) ->
-%%  (empty())#ty{atoms = bdd_lazy:any()};
-%%
-%%norm({predef, any}) -> any();
-%%norm({predef, none}) -> empty();
-%%norm({predef, integer}) ->
-%%  (empty())#ty{ints = bdd_lazy:pos({bdd_range, '*', '*'})};
-%%
-%%% ints
-%%norm({range, From, To}) ->
-%%  (empty())#ty{ints = bdd_lazy:pos({bdd_range, From, To})};
-%%
-%%norm({union, []}) -> empty();
-%%norm({union, [A]}) -> norm(A);
-%%norm({union, [A|T]}) -> union(norm(A), norm({union, T}));
-%%
-%%norm({intersection, []}) -> any();
-%%norm({intersection, [A]}) -> norm(A);
-%%norm({intersection, [A|T]}) -> intersect(norm(A), norm({intersection, T}));
-%%
-%%norm({negation, Ty}) -> negate(norm(Ty));
-%%
-%%norm(T) ->
-%%  logger:error("Norm not implemented for~n~p", [T]),
-%%  erlang:error("Norm not implemented, see error log").
 %%
 %%
 %%eval(#ty{atoms = At, ints = I, special = S, list = L, prod = {DefP, P}, arrw = {DefA, A}}) ->
@@ -269,12 +175,6 @@ union(A, B) -> negate(intersect(negate(A), negate(B))).
 %%    end
 %%             end,
 %%
-%%  is_empty_atoms(SnT#ty.atoms, [], [], Symtab)
-%%    andalso is_empty_special(SnT#ty.special, [], [], Symtab)
-%%    andalso is_empty_ranges(SnT#ty.ints, [], [], Symtab)
-%%    andalso Memoized(SnT#ty.list, Memo, fun (NewMemo) -> is_empty_list(SnT#ty.list, any(), any(), [], [], [], Symtab, NewMemo) end)
-%%    andalso Memoized(SnT#ty.prod, Memo, fun (NewMemo) -> is_empty_multi_prod(SnT#ty.prod, [], [], Symtab, NewMemo) end)
-%%    andalso Memoized(SnT#ty.arrw, Memo, fun (NewMemo) -> is_empty_multi_arrow(SnT#ty.arrw, [], [], Symtab, NewMemo) end).
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%               ATOMS
@@ -335,97 +235,6 @@ union(A, B) -> negate(intersect(negate(A), negate(B))).
 %%  is_empty_special(Left, P ++ [Atom], N, Sym)
 %%    andalso is_empty_special(Middle, P, N, Sym)
 %%    andalso is_empty_special(Right, P, N ++ [Atom], Sym).
-%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%               RANGES (Integer)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%%%intersected with empty is always empty
-%%is_empty_ranges({bdd, 0}, _P, _N, _Sym) -> true;
-%%is_empty_ranges({bdd, 1}, P, N, _Sym) ->
-%%  PInts = case P of [] -> [rep_ints:any()]; _ ->
-%%    lists:map(fun({bdd_range, X, Y}) -> rep_ints:interval(X, Y) end, P)
-%%          end,
-%%  NInts = case N of [] -> [rep_ints:any()]; _ ->
-%%    lists:map(fun({bdd_range, X, Y}) -> rep_ints:cointerval(X, Y) end, N)
-%%          end,
-%%  Pp = lists:foldl(fun rep_ints:intersect/2, rep_ints:any(), PInts),
-%%  Nn = lists:foldl(fun rep_ints:intersect/2, rep_ints:any(), NInts),
-%%  I = rep_ints:intersect(Pp, Nn),
-%%  rep_ints:is_empty(I);
-%%% explore DNF branches
-%%is_empty_ranges({bdd, {bdd_named, {Ref, Args}}, Left, Middle, Right}, P, N, Sym) ->
-%%  Ty = find_ty(Ref, Args, ints, Sym),
-%%  is_empty_ranges(bdd_lazy:intersect(Left, Ty), P, N, Sym)
-%%    andalso is_empty_ranges(Middle, P, N, Sym)
-%%    andalso is_empty_ranges(bdd_lazy:intersect(Right, bdd_lazy:negate(Ty)), P, N, Sym);
-%%% reduces to containment without variables
-%%is_empty_ranges({bdd, {bdd_var, _Var}, Left, Middle, Right}, P, N, Sym) ->
-%%  is_empty_ranges(Left, P, N, Sym)
-%%    andalso is_empty_ranges(Middle, P, N, Sym)
-%%    andalso is_empty_ranges(Right, P, N, Sym);
-%%is_empty_ranges({bdd, Range = {bdd_range, _From, _To}, Left, Middle, Right}, P, N, Sym) ->
-%%  is_empty_ranges(Left, P ++ [Range], N, Sym)
-%%    andalso is_empty_ranges(Middle, P, N, Sym)
-%%    andalso is_empty_ranges(Right, P, N ++ [Range], Sym).
-%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%               LISTS
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%%is_empty_list({bdd, 0}, _Left, _Right, _Negated, _PVar, _NVar, _SymTab, _Memo) -> true;
-%%is_empty_list({bdd, 1}, Left, Right, Negated, [], [], SymTab, Memo) ->
-%%  % no more variables
-%%
-%%  (is_empty(Left, SymTab, Memo)
-%%    orelse is_empty(Right, SymTab, Memo)
-%%    orelse explore_list(Left, Right, Negated, SymTab, Memo));
-%%
-%%is_empty_list({bdd, 1}, Left, Right, Negated, PVars, [Var | NVars], SymTab, Memo) ->
-%%  logger:debug("Removing negative variable from list clause: substitute in both positive and negative tuples:~n !~p => ~p", [Var, Var]),
-%%
-%%  Map = #{ Var => stdtypes:tnegate(Var) },
-%%  NsWithoutNegativeVars = [ {bdd_list, substitute_bdd(Map, A), substitute_bdd(Map, B)} || {bdd_list, A, B} <- Negated ],
-%%  is_empty_list({bdd, 1}, substitute_bdd(Map, Left), substitute_bdd(Map, Right), NsWithoutNegativeVars, PVars, NVars, SymTab, Memo);
-%%is_empty_list({bdd, 1}, Left, Right, Negated, [StdVar | PVars], [], SymTab, Memo) ->
-%%  logger:debug("Removing positive variable from list clause~nsubstitute toplevel positive: ~n~p => (y1..yn)~nsubstitute negative and positive components: ~n~p => (y1..yn) U ~p", [StdVar, StdVar, StdVar]),
-%%
-%%  {Avar, Bvar} = {fresh_variable(StdVar), fresh_variable(StdVar)},
-%%  SubstitutionStdMap = #{StdVar => stdtypes:tunion([StdVar, stdtypes:tlist_improper(Avar, Bvar)]) },
-%%
-%%  % covariance of lists: intersect left/right with (v1, v2)
-%%  LeftNew = intersect(norm(Avar), Left),
-%%  RightNew = intersect(norm(Bvar), Right),
-%%
-%%  NNoVars = [ {bdd_list, substitute_bdd(SubstitutionStdMap, S), substitute_bdd(SubstitutionStdMap, T)}
-%%    || {bdd_list, S, T} <- Negated ],
-%%
-%%  % continue removing positive variables
-%%  is_empty_list({bdd, 1}, LeftNew, RightNew, NNoVars, PVars, [], SymTab, Memo);
-%%
-%%is_empty_list({bdd, {bdd_named, {Ref, Args}}, Left, Middle, Right}, LL, RR, Negated, PVar, NVar, SymTab, Memo) ->
-%%  Ty = find_ty(Ref, Args, list, SymTab),
-%%
-%%  is_empty_list(bdd_lazy:intersect(Left, Ty), LL, RR, Negated, PVar, NVar, SymTab, Memo) andalso
-%%    is_empty_list(Middle, LL, RR, Negated, PVar, NVar, SymTab, Memo) andalso
-%%    is_empty_list(bdd_lazy:intersect(Right, bdd_lazy:negate(Ty)), LL, RR, Negated, PVar, NVar, SymTab, Memo);
-%%% collecting variables
-%%is_empty_list({bdd, {bdd_var, Var}, Left, Middle, Right}, LL, RR, Negated, PVar, NVar, SymTab, Memo) ->
-%%  is_empty_list(Left, LL, RR, Negated, PVar ++ [stdtypes:tvar(Var)], NVar, SymTab, Memo) andalso
-%%    is_empty_list(Middle, LL, RR, Negated, PVar, NVar, SymTab, Memo) andalso
-%%    is_empty_list(Right, LL, RR, Negated, PVar, NVar ++ [stdtypes:tvar(Var)], SymTab, Memo);
-%%is_empty_list({bdd, {bdd_list, A, B}, Left, Middle, Right}, LL, RR, Negated, PVar, NVar, SymTab, Memo) ->
-%%  %% norming
-%%  is_empty_list(Left, intersect(A, LL), intersect(B, RR), Negated, PVar, NVar, SymTab, Memo) andalso
-%%    is_empty_list(Middle, LL, RR, Negated, PVar, NVar, SymTab, Memo) andalso
-%%    is_empty_list(Right, LL, RR, Negated ++ [{bdd_list, A, B}], PVar, NVar, SymTab, Memo).
-%%
-%%explore_list(_S1, _S2, [], _SymTab, _Memo) -> false;
-%%explore_list(S1, S2, [{bdd_list, T1, T2} | N], Symtab, Memo) ->
-%%  ((subty:is_subty_bdd(S1, T1, Symtab, Memo) orelse explore_list(ty_rec:diff(S1, T1), S2, N, Symtab, Memo))
-%%    andalso
-%%    (subty:is_subty_bdd(S2, T2, Symtab, Memo) orelse explore_list(S1, ty_rec:diff(S2, T2), N, Symtab, Memo))).
-%%
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%               TUPLES
@@ -793,8 +602,35 @@ union(A, B) -> negate(intersect(negate(A), negate(B))).
 %%  SubTy.
 
 
-is_empty(_) ->
-  erlang:error(not_implemented).
+is_empty(TyRef) ->
+  % first try op-cache
+  case ty_ref:is_empty_cached(TyRef) of
+    R when R == true; R == false ->
+      io:format(user, "Subty cache hit~n", []),
+      R;
+    miss ->
+      ty_ref:store_is_empty_cached(TyRef, is_empty_miss(TyRef))
+  end.
+
+is_empty_miss(TyRef) ->
+  io:format(user, "Not cached: ~p~n", [TyRef]),
+  Ty = ty_ref:load(TyRef),
+  A = dnf_var_int:is_empty(Ty#ty.interval),
+  B = dnf_var_int:is_empty(Ty#ty.tuple),
+  A andalso B.
+
+%%  is_empty_atoms(SnT#ty.atoms, [], [], Symtab)
+%%    andalso is_empty_special(SnT#ty.special, [], [], Symtab)
+%%    andalso Memoized(SnT#ty.list, Memo, fun (NewMemo) -> is_empty_list(SnT#ty.list, any(), any(), [], [], [], Symtab, NewMemo) end)
+%%    andalso Memoized(SnT#ty.arrw, Memo, fun (NewMemo) -> is_empty_multi_arrow(SnT#ty.arrw, [], [], Symtab, NewMemo) end).
+
+
+
+
+
+
+
+
 
 % TODO implement witness
 eval(_) ->
