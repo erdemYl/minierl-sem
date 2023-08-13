@@ -3,6 +3,7 @@
 -include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+
 -export([limited_interval/0]).
 
 limited_interval() ->
@@ -10,10 +11,10 @@ limited_interval() ->
 
 limited_interval(Size) when Size =< 1 ->
   frequency([
-    {1, ty_interval:any()},
-    {1, ty_interval:empty()},
-    {2, ?LET(SingleInt, integer(), ty_interval:interval(SingleInt, SingleInt))},
-    {8, ?LET({From, To}, {integer(), integer()}, ty_interval:interval(From, To))}
+    {1, ?LAZY(ty_interval:any())},
+    {1, ?LAZY(ty_interval:empty())},
+    {2, ?LAZY(?LET(SingleInt, integer(), ty_interval:interval(SingleInt, SingleInt)))},
+    {8, ?LAZY(?LET({From, To}, {integer(), integer()}, ty_interval:interval(From, To)))}
   ]);
 limited_interval(Size) ->
   frequency([

@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(ast, [n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2]).
+-import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2]).
 
 simple_test_() ->
   Data = lists:map(
@@ -201,41 +201,42 @@ neg_var_prod_test() ->
   false = subty( T, S ),
   ok.
 
-%%%%% µx.(α×(α×x)) ∨ nil  ≤ µx.(α×x)     ∨ nil
-%%%%% µx.(α×x)     ∨ nil !≤ µx.(α×(α×x)) ∨ nil
-%%%%even_lists_contained_in_lists_test() ->
-%%%%  S = named(even_ulist, [tvar(alpha)]),
-%%%%  T = named(ulist, [tvar(alpha)]),
-%%%%  true  = subty:is_subty(predefSymbolicTable(), S, T),
-%%%%  false = subty:is_subty(predefSymbolicTable(), T, S),
-%%%%  ok.
-%%%%
-%%%%% µx.(α×(α×x)) ∨ (α×nil)  ≤ µx.(α×x)     ∨ nil
-%%%%% µx.(α×x)     ∨ (α×nil) !≤ µx.(α×(α×x)) ∨ nil
-%%%%uneven_lists_contained_in_lists_test() ->
-%%%%  S = named(uneven_ulist, [tvar(alpha)]),
-%%%%  T = named(ulist, [tvar(alpha)]),
-%%%%  true  = subty:is_subty(predefSymbolicTable(), S, T),
-%%%%  false = subty:is_subty(predefSymbolicTable(), T, S),
-%%%%  ok.
-%%%%
-%%%%% µx.(α×x) ∨ nil ∼ (µx.(α×(α×x))∨nil) ∨ (µx.(α×(α×x))∨(α×nil))
-%%%%uneven_even_lists_contained_in_lists_test() ->
-%%%%  S = tunion([
-%%%%    named(uneven_ulist, [tvar(alpha)]),
-%%%%    named(even_ulist, [tvar(alpha)])
-%%%%  ]),
-%%%%  T = named(ulist, [tvar(alpha)]),
-%%%%
-%%%%  true  = subty:is_subty(predefSymbolicTable(), S, T),
-%%%%  true = subty:is_subty(predefSymbolicTable(), T, S),
-%%%%  ok.
-%%%%
-%%%%% (µx.(α×(α×x))∨nil) <!> (µx.(α×(α×x))∨(α×nil))
-%%%%uneven_even_lists_not_comparable_test() ->
-%%%%  S = named(uneven_ulist, [tvar(alpha)]),
-%%%%  T = named(even_ulist, [tvar(alpha)]),
-%%%%
-%%%%  false  = subty:is_subty(predefSymbolicTable(), S, T),
-%%%%  false = subty:is_subty(predefSymbolicTable(), T, S),
-%%%%  ok.
+% µx.(α×(α×x)) ∨ nil  ≤ µx.(α×x)     ∨ nil
+% µx.(α×x)     ∨ nil !≤ µx.(α×(α×x)) ∨ nil
+even_lists_contained_in_lists_test() ->
+  S = mu(v(x),  u(t(v(a), t(v(a), v(x))), b(nil))),
+  T = mu(v(x2), u(t(v(a), v(x2)), b(nil))),
+  true  = subty(S, T),
+  false = subty(T, S),
+  ok.
+
+% µx.(α×(α×x)) ∨ (α×nil)  ≤ µx.(α×x)     ∨ nil
+% µx.(α×x)     ∨ (α×nil) !≤ µx.(α×(α×x)) ∨ nil
+uneven_lists_contained_in_lists_test() ->
+  S = mu(v(x),  u(t(v(a), t(v(a), v(x))), t(v(a), b(nil)))),
+  T = mu(v(x2), u(t(v(a), v(x2)), b(nil))),
+  true  = subty(S, T),
+  false = subty(T, S),
+  ok.
+
+% µx.(α×x) ∨ nil ∼ (µx.(α×(α×x))∨nil) ∨ (µx.(α×(α×x))∨(α×nil))
+uneven_even_lists_contained_in_lists_test() ->
+  Even = mu(v(x),  u(t(v(a), t(v(a), v(x))), b(nil))),
+  Uneven = mu(v(x2),  u(t(v(a), t(v(a), v(x2))), t(v(a), b(nil)))),
+  U = u(Even, Uneven),
+  AllList = mu(v(x3), u(t(v(a), v(x3)), b(nil))),
+
+  true = subty(U, AllList),
+  true = subty(AllList, U),
+
+  ok.
+
+% (µx.(α×(α×x))∨nil) <!> (µx.(α×(α×x))∨(α×nil))
+uneven_even_lists_not_comparable_test() ->
+  Even = mu(v(x),  u(t(v(a), t(v(a), v(x))), b(nil))),
+  Uneven = mu(v(x2),  u(t(v(a), t(v(a), v(x2))), t(v(a), b(nil)))),
+
+  false = subty(Even, Uneven),
+  false = subty(Uneven, Even),
+
+  ok.

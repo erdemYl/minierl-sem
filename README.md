@@ -8,45 +8,44 @@ Build
 
     $ rebar3 compile
 
+ 
+Open Questions
+-----
+
+* Are the subtype recursive calls improved by a tail-recursive variant?
+  * e.g. `rec_fun() andalso rec_fun() andalso rec_fun()`
+  * vs tail-recursive
 
 
 Roadmap
 -----
 
 
-V 1.0 Basic
+V 1 Basic
 ===========
 
-* [ ] v1 basic architecture
+* [x] v1 basic architecture
   * AST test spec defined
-  * arrows, 2-tuples, intervals
+  * arrows, 2-tuples, intervals, atoms
   * generic bdd
-  * recursive types via type references
   * hash-consing of types
   * subtyping
+  * recursive types via type references
 
-Questions
-
-* Are the subtype recursive calls tail-recursive?
-  * e.g. `rec_fun() andalso rec_fun2() andalso rec_fun3()` 
-  * vs tail-recursive variant
-
-
-Next
-===========
- 
-* [ ] 2.0 
-  * hash-consing of BDD
-  * hash-consing of BDD operations
-   
-* [ ] 3.0
+* [ ] V2
   * tallying
 
-* [ ] 4.0 
-  * types: base, atoms
+* [ ] V3
+  * lazy BDDs
+  * hash-consing of ty_rec operations
+  * hash-consing of BDD
+  * hash-consing of BDD operations
+
+* [ ] V4 
+  * types: base
   * 
-* [ ] 5.0 
-  * types: tuples, functions
+* [ ] V5 
+  * types: n-tuples, n-functions
   * 
-* [ ] 6.0 
+* [ ] V6 
   * types: lists, bitstrings, records, specials, ...

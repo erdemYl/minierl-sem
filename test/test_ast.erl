@@ -1,4 +1,4 @@
--module(ast).
+-module(test_ast).
 
 % @doc This file defines the λ_erl AST.
 % It is used to test the erlang types library.
@@ -16,11 +16,9 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 % Types
 % ================
 
-% co-inductive interpretation of types allows recursive references
--type ty_ref() :: {type_ref, integer()}.
 
 -type ty() ::
-  ty_union() | ty_intersection() | ty_negation()
+  ty_mu() | ty_union() | ty_intersection() | ty_negation()
   | ty_bottom() | ty_any()
   | ty_fun() | ty_tuple() | ty_var() | ty_base().
 
@@ -28,10 +26,14 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 -type ty_var()     :: {var, ty_varname()}.
 -type ty_varname() :: atom().
 
+% recursive type
+-type ty_mu()        :: {mu, ty_var(), ty()}.
+
 -type ty_bottom() :: none.
 -type ty_any() :: any.
--type ty_tuple()  :: {tuple, ty_ref(), ty_ref()}.
--type ty_fun()    :: {'fun', ty_ref(), ty_ref()}.
+-type ty_tuple()  :: {tuple, ty(), ty()}.
+-type ty_fun()    :: {'fun', ty(), ty()}.
+
 
 -type ty_union()        :: {union, ty(), ty()}.
 -type ty_intersection() :: {intersection, ty(), ty()}.
@@ -75,7 +77,7 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 -type bounded_tyvar() :: {ty_varname(), ty()}.
 
 subty(T1, T2) ->
-  ty_rec:is_subtype(ast:norm(T1), ast:norm(T2)).
+  ty_rec:is_subtype(test_ast:norm(T1), test_ast:norm(T2)).
 
 b(Atom) -> {'atom', Atom}.
 
@@ -90,6 +92,7 @@ r(X) -> {integer, X}.
 
 t(X, Y) -> {'tuple', X, Y}.
 
+mu(Var, Ty) -> {mu, Var, Ty}.
 
 any() -> any.
 none() -> none.
@@ -107,7 +110,7 @@ i([X,Y | T]) -> {intersection, X, i([Y | T])}.
 n(X) -> {negation, X}.
 
 % ==================
-% ast:ty() -> ty_rec:ty()
+% ast:ty() -> ty_rec:ty_ref()
 % ==================
 %
 % Conversion of a type into a multi-BDD representation
@@ -123,9 +126,21 @@ norm({'atom', Atom}) ->
   TyAtom = ty_atom:finite([Atom]),
   TAtom = dnf_var_ty_atom:ty_atom(TyAtom),
   ty_rec:atom(TAtom);
-norm({var, A}) ->
-  Var = maybe_new_variable(A),
-  ty_rec:variable(Var);
+norm({mu, Var, Ty}) ->
+  % assumption: Var has a unique name in the whole Ty
+  NewRef = ty_ref:new_ty_ref(),
+  ty_ref:store_recursive_variable(Var, NewRef),
+  TTy = norm(Ty),
+  ty_ref:define_ty_ref(NewRef, ty_ref:load(TTy));
+norm(Var = {var, Name}) ->
+  case ty_ref:check_recursive_variable(Var) of
+    % free variable
+    miss ->
+      TyVar = maybe_new_variable(Name),
+      ty_rec:variable(TyVar);
+    % bound recursive variable
+    Ty -> Ty
+  end;
 norm({tuple, A, B}) ->
   TyA = norm(A),
   TyB = norm(B),

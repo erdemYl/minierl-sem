@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({1,2,0}).
+-vsn({1,3,0}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -8,6 +8,10 @@
 
 % additional type constructors
 -export([function/1, variable/1, atom/1, interval/1, tuple/1]).
+% type constructors with type refs
+-export([function/2, tuple/2]).
+% top type constructors
+-export([function/0, atom/0, interval/0, tuple/0]).
 
 -export([is_subtype/2]).
 
@@ -63,20 +67,45 @@ atom(Atom) ->
   Empty = ty_ref:load(empty()),
   ty_ref:store(Empty#ty{ atom = Atom }).
 
+-spec atom() -> ty_ref().
+atom() -> atom(dnf_var_ty_atom:any()).
+
 -spec interval(interval()) -> ty_ref().
 interval(Interval) ->
   Empty = ty_ref:load(empty()),
   ty_ref:store(Empty#ty{ interval = Interval }).
+
+-spec interval() -> ty_ref().
+interval() -> interval(dnf_var_int:any()).
+
+-spec tuple(ty_ref(), ty_ref()) -> ty_ref().
+tuple(A, B) ->
+  Empty = ty_ref:load(empty()),
+  Tuple = dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(A, B))),
+  ty_ref:store(Empty#ty{ tuple = Tuple }).
 
 -spec tuple(ty_tuple()) -> ty_ref().
 tuple(Tuple) ->
   Empty = ty_ref:load(empty()),
   ty_ref:store(Empty#ty{ tuple = Tuple }).
 
+-spec tuple() -> ty_ref().
+tuple() -> tuple(dnf_var_ty_tuple:any()).
+
+-spec function(ty_ref(), ty_ref()) -> ty_ref().
+function(A, B) ->
+  Empty = ty_ref:load(empty()),
+  Fun = dnf_var_ty_function:function(dnf_ty_function:function(ty_function:function(A, B))),
+  ty_ref:store(Empty#ty{ function = Fun }).
+
 -spec function(ty_function()) -> ty_ref().
 function(Fun) ->
   Empty = ty_ref:load(empty()),
   ty_ref:store(Empty#ty{ function = Fun }).
+
+-spec function() -> ty_ref().
+function() ->
+  function(dnf_var_ty_function:any()).
 
 % ======
 % Boolean operations
@@ -111,7 +140,6 @@ union(A, B) -> negate(intersect(negate(A), negate(B))).
 
 
 is_empty(TyRef) ->
-%%  io:format(user, "Empty of ~p~n", [ty_ref:load(TyRef)]),
   % first try op-cache
   case ty_ref:is_empty_cached(TyRef) of
     R when R == true; R == false -> R;
@@ -123,8 +151,18 @@ is_empty_miss(TyRef) ->
   Ty = ty_ref:load(TyRef),
   dnf_var_ty_atom:is_empty(Ty#ty.atom)
     andalso dnf_var_int:is_empty(Ty#ty.interval)
-    andalso dnf_var_ty_tuple:is_empty(Ty#ty.tuple)
-    andalso dnf_var_ty_function:is_empty(Ty#ty.function).
+    andalso (
+      begin
+        case ty_ref:is_empty_memoized(TyRef) of
+          true -> true;
+          miss ->
+            % memoize
+            ok = ty_ref:memoize(TyRef),
+            dnf_var_ty_tuple:is_empty(Ty#ty.tuple)
+              andalso dnf_var_ty_function:is_empty(Ty#ty.function)
+        end
+      end
+  ).
 
 % TODO implement witness
 eval(_) ->

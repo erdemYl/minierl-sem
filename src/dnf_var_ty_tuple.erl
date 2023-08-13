@@ -1,5 +1,5 @@
 -module(dnf_var_ty_tuple).
--vsn({1,2,0}).
+-vsn({1,3,0}).
 
 -define(P, {dnf_ty_tuple, ty_variable}).
 
@@ -45,7 +45,6 @@ equal(B1, B2) -> gen_bdd:equal(?P, B1, B2).
 compare(B1, B2) -> gen_bdd:compare(?P, B1, B2).
 
 
-% TODO memoize α1∧…∧αn ∧ ¬β1∧…∧¬βm ∧ t
 is_empty(0) -> true;
 is_empty({terminal, Tuple}) ->
   dnf_ty_tuple:is_empty(Tuple);
