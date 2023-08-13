@@ -3,6 +3,8 @@
 -include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-export([limited_ast/0]).
+
 limited_interval() ->
   ?LAZY(?LET(Interval, prop_interval:limited_interval(), ty_rec:interval(dnf_var_int:int(Interval)))).
 

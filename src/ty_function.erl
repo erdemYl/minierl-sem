@@ -1,5 +1,5 @@
 -module(ty_function).
--vsn({1,2,0}).
+-vsn({1,3,1}).
 
 %% domain -> co-domain function representation
 
@@ -7,7 +7,7 @@
 -export([compare/2, equal/2]).
 
 -behavior(b_function).
--export([function/2, domain/1, codomain/1]).
+-export([function/2, domain/1, codomain/1, codomains_intersect/1]).
 
 compare(A, B) when A < B -> -1;
 compare(A, B) when A > B -> 1;
@@ -19,6 +19,10 @@ function(Ref1, Ref2) -> {ty_function, Ref1, Ref2}.
 
 domain({ty_function, Ref, _}) -> Ref.
 codomain({ty_function, _, Ref}) -> Ref.
+
+codomains_intersect([]) -> ty_rec:any();
+codomains_intersect([Fun]) -> ty_function:codomain(Fun);
+codomains_intersect([Fun | Funs]) -> ty_rec:intersect(ty_function:codomain(Fun), codomains_intersect(Funs)).
 
 
 

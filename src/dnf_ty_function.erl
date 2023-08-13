@@ -1,5 +1,5 @@
 -module(dnf_ty_function).
--vsn({1,2,0}).
+-vsn({1,3,1}).
 
 -define(P, {bdd_bool, ty_function}).
 
@@ -12,6 +12,7 @@
 
 -export([function/1]).
 
+-type ty_ref() :: {ty_ref, integer()}.
 -type dnf_function() :: term().
 -type ty_function() :: dnf_function(). % ty_function:type()
 -type dnf_ty_function() :: term().
@@ -71,17 +72,23 @@ is_empty({node, Function, L_BDD, R_BDD}, S, P, N) ->
     is_empty(R_BDD, S, P, [Function | N])
 .
 
-% Phi' (4.10) from paper covariance and contravariance
+% optimized phi' (4.10) from paper covariance and contravariance
+% justification for this version of phi can be found in `prop_phi_function.erl`
+-spec explore_function(ty_ref(), ty_ref(), [term()]) -> boolean().
 explore_function(T1, T2, []) ->
   ty_rec:is_empty(T2) orelse ty_rec:is_empty(T1);
 explore_function(T1, T2, [Function | P]) ->
-  S1 = ty_function:domain(Function),
-  S2 = ty_function:codomain(Function),
-  %% TODO measure this optimization
-  %% (ty_rec:is_subtype(T1, S1) orelse ty_rec:is_subtype(ty_function:codomains_intersect(P), ty_rec:negate(T2)) ) and
-  explore_function(T1, ty_rec:intersect(T2, S2), P)
-    andalso
-    explore_function(ty_rec:diff(T1, S1), T2, P).
+  ty_rec:is_empty(T1) orelse ty_rec:is_empty(T2)
+  orelse
+  begin
+    S1 = ty_function:domain(Function),
+    S2 = ty_function:codomain(Function),
+    explore_function(T1, ty_rec:intersect(T2, S2), P)
+      andalso
+      explore_function(ty_rec:diff(T1, S1), T2, P)
+      end.
+
+
 
 
 

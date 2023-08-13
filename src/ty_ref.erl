@@ -1,8 +1,8 @@
 -module(ty_ref).
--vsn({1,3,0}).
+-vsn({1,3,1}).
 
 -export([any/0, store/1, load/1, new_ty_ref/0, define_ty_ref/2, is_empty_cached/1, store_is_empty_cached/2, store_recursive_variable/2, check_recursive_variable/1]).
--export([memoize/1, is_empty_memoized/1]).
+-export([memoize/1, is_empty_memoized/1, reset/0]).
 
 -on_load(setup_ets/0).
 -define(TY_UTIL, ty_counter).        % counter store
@@ -17,11 +17,30 @@
 % it is treated as a recursive bound variable instead of a free one
 -define(RECURSIVE_TABLE, remember_recursive_variables_ets).
 
+all_tables() ->
+  [?TY_UNIQUE_TABLE, ?TY_MEMORY, ?TY_UTIL, ?EMPTY_MEMO, ?EMPTY_CACHE, ?RECURSIVE_TABLE].
+
+reset() ->
+  ets:delete(?EMPTY_MEMO),
+  ets:delete(?EMPTY_CACHE),
+
+  ets:new(?EMPTY_CACHE, [public, named_table]),
+  ets:new(?EMPTY_MEMO, [public, named_table]),
+
+  % memoize ANY as not empty
+  {ty_ref, AnyId} = ty_rec:any(),
+  ets:insert(?EMPTY_CACHE, {AnyId, false}),
+
+  % memoize EMPTY as empty
+  {ty_ref, EmptyId} = ty_rec:empty(),
+  ets:insert(?EMPTY_CACHE, {EmptyId, true})
+.
+
 -spec setup_ets() -> ok.
 setup_ets() ->
   spawn(fun() ->
     % spawns a new process that is the owner of the variable id ETS table
-    lists:foreach(fun(Tab) -> ets:new(Tab, [public, named_table]) end, [?TY_UNIQUE_TABLE, ?TY_MEMORY, ?TY_UTIL, ?EMPTY_MEMO, ?EMPTY_CACHE, ?RECURSIVE_TABLE]),
+    lists:foreach(fun(Tab) -> ets:new(Tab, [public, named_table]) end, all_tables()),
     ets:insert(?TY_UTIL, {ty_number, 0}),
 
     % define ANY node once
