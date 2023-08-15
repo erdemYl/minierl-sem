@@ -1,5 +1,5 @@
 -module(ty_ref).
--vsn({1,3,1}).
+-vsn({1,3,3}).
 
 -export([any/0, store/1, load/1, new_ty_ref/0, define_ty_ref/2, is_empty_cached/1, store_is_empty_cached/2, store_recursive_variable/2, check_recursive_variable/1]).
 -export([memoize/1, is_empty_memoized/1, reset/0]).
@@ -63,17 +63,11 @@ any() -> {ty_ref, 0}.
 define_any() ->
   Any = {ty_ref, 0},
 
-  % create tuple top (co-inductive)
-  TupleAny = ty_tuple:tuple(Any, Any),
-  DnfTupleAny = dnf_ty_tuple:tuple(TupleAny),
-  DnfVarTupleAny = dnf_var_ty_tuple:tuple(DnfTupleAny),
+  % create tuple top
+  DnfVarTupleAny = dnf_var_ty_tuple:any(),
 
-  % create function top (co-inductive)
-  % TODO 0 -> t is empty for every t;
-  % does it make any difference to set t to something else other than empty or any?
-  FunctionAny = ty_function:function(ty_rec:empty(), ty_rec:empty()),
-  DnfFunctionAny = dnf_ty_function:function(FunctionAny),
-  DnfVarFunctionAny = dnf_var_ty_function:function(DnfFunctionAny),
+  % create function top
+  DnfVarFunctionAny = dnf_var_ty_function:any(),
 
   % create interval top
   DnfVarIntervalAny = dnf_var_int:any(),
@@ -82,10 +76,10 @@ define_any() ->
   DnfVarAtomAny = dnf_var_ty_atom:any(),
 
   % union
-  Ty1   = ty_rec:interval(DnfVarIntervalAny),
-  Ty2   = ty_rec:tuple(DnfVarTupleAny),
-  Ty3   = ty_rec:atom(DnfVarAtomAny),
-  Ty4   = ty_rec:function(DnfVarFunctionAny),
+  Ty1 = ty_rec:interval(DnfVarIntervalAny),
+  Ty2 = ty_rec:tuple(DnfVarTupleAny),
+  Ty3 = ty_rec:atom(DnfVarAtomAny),
+  Ty4 = ty_rec:function(DnfVarFunctionAny),
 
   U1 = ty_rec:union(Ty1, Ty2),
   U2 = ty_rec:union(U1, Ty3),
@@ -103,7 +97,7 @@ new_ty_ref() ->
   {ty_ref, next_ty_id()}.
 
 define_ty_ref({ty_ref, Id}, Ty) ->
-%%  io:format(user, "Store: ~p :=~n~p~n", [Id, Ty]),
+  io:format(user, "Store: ~p :=~n~p~n", [Id, Ty]),
   ets:insert(?TY_UNIQUE_TABLE, {Ty, Id}),
   ets:insert(?TY_MEMORY, {Id, Ty}),
   {ty_ref, Id}.
