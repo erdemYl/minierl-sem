@@ -1,5 +1,5 @@
 -module(dnf_ty_tuple).
--vsn({1,2,0}).
+-vsn({1,3,2}).
 
 -define(P, {bdd_bool, ty_tuple}).
 
@@ -40,35 +40,40 @@ is_any(B) -> gen_bdd:is_any(?P, B).
 equal(B1, B2) -> gen_bdd:equal(?P, B1, B2).
 compare(B1, B2) -> gen_bdd:compare(?P, B1, B2).
 
-is_empty(TyRef) -> is_empty(
-  TyRef,
-  _PiLeftCollected = ty_rec:any(), _PiRightCollected = ty_rec:any(),
+is_empty(TyBDD) -> is_empty(
+  TyBDD,
+  ty_rec:any(),
+  ty_rec:any(),
   _NegatedTuples = []
 ).
 
-is_empty(0, _Left, _Right, _Negated) -> true;
-is_empty({terminal, 1}, Left, Right, Negated) ->
-  ty_rec:is_empty(Left)
-  orelse ty_rec:is_empty(Right)
-  orelse explore_tuple(Left, Right, Negated);
-is_empty({node, Ty, L_BDD, R_BDD}, LeftSum, RightSum, Negated) ->
-  LRef = ty_tuple:pi1(Ty),
-  RRef = ty_tuple:pi2(Ty),
+is_empty(0, _, _, _) -> true;
+is_empty({terminal, 1}, S1, S2, N) ->
+  phi(S1, S2, N);
+is_empty({node, TyTuple, L_BDD, R_BDD}, BigS1, BigS2, Negated) ->
+  S1 = ty_tuple:pi1(TyTuple),
+  S2 = ty_tuple:pi2(TyTuple),
 
-  NewLeftSum  = ty_rec:intersect(LRef, LeftSum),
-  NewRightSum  = ty_rec:intersect(RRef, RightSum),
-  is_empty(L_BDD, NewLeftSum, NewRightSum, Negated)
+  is_empty(L_BDD, ty_rec:intersect(S1, BigS1), ty_rec:intersect(S2, BigS2), Negated)
   andalso
-    is_empty(R_BDD, LeftSum, RightSum, [Ty | Negated]).
+    is_empty(R_BDD, BigS1, BigS2, [TyTuple | Negated]).
 
-explore_tuple(_, _, []) -> false;
-explore_tuple(Left, Right, [Ty | N]) ->
-  T1 = ty_tuple:pi1(Ty),
-  T2 = ty_tuple:pi2(Ty),
-
-  (ty_rec:is_subtype(Left, T1) orelse explore_tuple(ty_rec:diff(Left,T1), Right, N))
-  andalso
-    (ty_rec:is_subtype(Right, T2) orelse explore_tuple(Left, ty_rec:diff(Right,T2), N)).
+phi(S1, S2, []) ->
+  ty_rec:is_empty(S1)
+    orelse
+    ty_rec:is_empty(S2);
+phi(S1, S2, [Ty | N]) ->
+  ty_rec:is_empty(S1)
+    orelse ty_rec:is_empty(S2)
+    orelse (
+      begin
+        T1 = ty_tuple:pi1(Ty),
+        T2 = ty_tuple:pi2(Ty),
+        phi(ty_rec:diff(S1, T1), S2, N)
+          andalso
+          phi(S1, ty_rec:diff(S2, T2), N)
+      end
+  ).
 
 
 
