@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({1,3,0}).
+-vsn({2,0,0}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -13,7 +13,9 @@
 % top type constructors
 -export([function/0, atom/0, interval/0, tuple/0]).
 
--export([is_subtype/2]).
+-export([is_equivalent/2, is_subtype/2, normalize/3]).
+
+-export([substitute/2, substitute/3, pi/2, all_variables/1]).
 
 -record(ty, {atom, interval, tuple, function}).
 
@@ -33,6 +35,9 @@ is_subtype(TyRef1, TyRef2) ->
   NewTy = intersect(TyRef1, ty_rec:negate(TyRef2)),
 
   is_empty(NewTy).
+
+is_equivalent(TyRef1, TyRef2) ->
+  is_subtype(TyRef1, TyRef2) andalso is_subtype(TyRef2, TyRef1).
 
 % ======
 % Type constructors
@@ -171,3 +176,125 @@ eval(_) ->
 
 is_any(_Arg0) ->
   erlang:error(any_not_implemented). % TODO needed?
+
+normalize(TyRef, Fixed, M) ->
+  Ty = ty_ref:load(TyRef),
+  AtomNormalize = dnf_var_ty_atom:normalize(Ty#ty.atom, Fixed, M),
+  case AtomNormalize of
+    [] -> [];
+    _ ->
+      IntervalNormalize = dnf_var_int:normalize(Ty#ty.interval, Fixed, M),
+      Res1 = constraint_set:merge_and_meet(AtomNormalize, IntervalNormalize),
+      case Res1 of
+        [] -> [];
+        _ ->
+          begin
+                Res2 = dnf_var_ty_tuple:normalize(Ty#ty.tuple, Fixed, M),
+                Res3 = constraint_set:merge_and_meet(Res1, Res2),
+                case Res3 of
+                  [] -> [];
+                  _ ->
+                    Res4 = dnf_var_ty_function:normalize(Ty#ty.function, Fixed, M),
+                    constraint_set:merge_and_meet(Res3, Res4)
+                end
+          end
+      end
+  end.
+
+substitute(TyRef, SubstituteMap) ->
+  substitute(TyRef, SubstituteMap, #{}).
+
+substitute(TyRef, SubstituteMap, OldMemo) ->
+  case maps:get(TyRef, OldMemo, undefined) of
+    undefined ->
+      Ty = #ty{
+        atom = Atoms,
+        interval = Ints,
+        tuple = Tuples,
+        function = Functions
+      } = ty_ref:load(TyRef),
+
+      case has_ref(Ty, TyRef) of
+        true ->
+          RecursiveNewRef = ty_ref:new_ty_ref(),
+          Memo = OldMemo#{TyRef => RecursiveNewRef},
+          NewTy = #ty{
+            atom = dnf_var_ty_atom:substitute(Atoms, SubstituteMap),
+            interval = dnf_var_int:substitute(Ints, SubstituteMap),
+            tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, Memo),
+            function = dnf_var_ty_function:substitute(Functions, SubstituteMap, Memo)
+          },
+          ty_ref:define_ty_ref(RecursiveNewRef, NewTy);
+        false ->
+          NewTy = #ty{
+            atom = dnf_var_ty_atom:substitute(Atoms, SubstituteMap),
+            interval = dnf_var_int:substitute(Ints, SubstituteMap),
+            tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, OldMemo),
+            function = dnf_var_ty_function:substitute(Functions, SubstituteMap, OldMemo)
+          },
+          ty_ref:store(NewTy)
+      end;
+
+    ToReplace -> ToReplace
+  end.
+
+has_ref(#ty{tuple = Tuple, function = Function}, TyRef) ->
+  dnf_var_ty_tuple:has_ref(Tuple, TyRef) orelse dnf_var_ty_function:has_ref(Function, TyRef).
+
+pi(atom, TyRef) ->
+  Ty = ty_ref:load(TyRef),
+  Ty#ty.atom;
+pi(interval, TyRef) ->
+  Ty = ty_ref:load(TyRef),
+  Ty#ty.interval;
+pi(tuple, TyRef) ->
+  Ty = ty_ref:load(TyRef),
+  Ty#ty.tuple;
+pi(function, TyRef) ->
+  Ty = ty_ref:load(TyRef),
+  Ty#ty.function.
+
+all_variables(TyRef) ->
+  #ty{
+    atom = Atoms,
+    interval = Ints,
+    tuple = Tuples,
+    function = Functions
+  } = ty_ref:load(TyRef),
+
+  lists:usort(dnf_var_ty_atom:all_variables(Atoms)
+  ++ dnf_var_int:all_variables(Ints)
+  ++ dnf_var_ty_tuple:all_variables(Tuples)
+  ++ dnf_var_ty_function:all_variables(Functions)).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+usage_test() ->
+  Lists = ty_ref:new_ty_ref(),
+  ListsBasic = ty_ref:new_ty_ref(),
+
+  % nil
+  Nil = ty_rec:atom(dnf_var_ty_atom:ty_atom(ty_atom:finite([nil]))),
+
+  % (alpha, Lists)
+  Alpha = ty_variable:new("alpha"),
+  AlphaTy = ty_rec:variable(Alpha),
+  Tuple = ty_rec:tuple(dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(AlphaTy, Lists)))),
+  Recursive = ty_rec:union(Nil, Tuple),
+
+  ty_ref:define_ty_ref(Lists, ty_ref:load(Recursive)),
+
+  SomeBasic = ty_rec:atom(dnf_var_ty_atom:ty_atom(ty_atom:finite([somebasic]))),
+  SubstMap = #{Alpha => SomeBasic},
+  Res = ty_rec:substitute(Lists, SubstMap),
+
+  Tuple2 = ty_rec:tuple(dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(SomeBasic, ListsBasic)))),
+  Expected = ty_rec:union(Nil, Tuple2),
+  ty_ref:define_ty_ref(ListsBasic, ty_ref:load(Expected)),
+
+  true = ty_rec:is_equivalent(Res, Expected),
+
+  ok.
+
+-endif.

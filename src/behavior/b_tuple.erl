@@ -1,5 +1,5 @@
 -module(b_tuple).
--vsn({1,2,0}).
+-vsn({2,0,0}).
 
 -type ty_tuple() :: term().
 -type ty_ref() :: {ty_ref, integer()}.

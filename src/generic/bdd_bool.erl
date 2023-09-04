@@ -1,5 +1,5 @@
 -module(bdd_bool).
--vsn({1,0,0}).
+-vsn({2,0,0}).
 
 % only used as a simple boolean terminal node in a BDD where the leafs are 1 and 0 only.
 

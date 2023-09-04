@@ -1,16 +1,22 @@
 -module(dnf_ty_function).
--vsn({1,3,1}).
+-vsn({2,0,0}).
+
+-ifdef(TEST).
+-export([normalize_no_vars/6]).
+-export([explore_function_norm/5]).
+-endif.
 
 -define(P, {bdd_bool, ty_function}).
+-define(F(Z), fun() -> Z end).
 
 -behavior(eq).
 -export([equal/2, compare/2]).
 
 -behavior(type).
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
--export([eval/1, is_empty/1, is_any/1]).
+-export([eval/1, is_empty/1, is_any/1, normalize/5, substitute/3]).
 
--export([function/1]).
+-export([function/1, all_variables/1, has_ref/2]).
 
 -type ty_ref() :: {ty_ref, integer()}.
 -type dnf_function() :: term().
@@ -49,6 +55,8 @@ is_empty(TyDnf) ->
   ).
 
 is_empty(0, _, _, _) -> true;
+% TODO should only be {terminal, 1}, not just 1!
+%%is_empty(1, _, _, []) -> false;
 is_empty({terminal, 1}, _, _, []) -> false;
 is_empty({terminal, 1}, S, P, [Function | N]) ->
   T1 = ty_function:domain(Function),
@@ -80,38 +88,120 @@ explore_function(T1, T2, []) ->
 explore_function(T1, T2, [Function | P]) ->
   ty_rec:is_empty(T1) orelse ty_rec:is_empty(T2)
   orelse
-  begin
-    S1 = ty_function:domain(Function),
-    S2 = ty_function:codomain(Function),
-    explore_function(T1, ty_rec:intersect(T2, S2), P)
-      andalso
-      explore_function(ty_rec:diff(T1, S1), T2, P)
-      end.
+    begin
+      S1 = ty_function:domain(Function),
+      S2 = ty_function:codomain(Function),
+      explore_function(T1, ty_rec:intersect(T2, S2), P)
+        andalso
+        explore_function(ty_rec:diff(T1, S1), T2, P)
+    end.
+
+normalize(TyFunction, [], [], Fixed, M) ->
+  % optimized NArrow rule
+  normalize_no_vars(TyFunction, ty_rec:empty(), [], [], Fixed, M);
+normalize(DnfTyFunction, PVar, NVar, Fixed, M) ->
+  Ty = ty_rec:function(dnf_var_ty_function:function(DnfTyFunction)),
+  % ntlv rule
+  ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:function(dnf_var_ty_function:var(Var)) end, M).
 
 
+normalize_no_vars(0, _, _, _, _Fixed, _) -> [[]]; % empty
+normalize_no_vars({terminal, 1}, _, _, [], _Fixed, _) -> []; % non-empty
+normalize_no_vars({terminal, 1}, S, P, [Function | N], Fixed, M) ->
+  T1 = ty_function:domain(Function),
+  T2 = ty_function:codomain(Function),
+  %% ∃ T1-->T2 ∈ N s.t.
+  %%   T1 is in the domain of the function
+  %%   S is the union of all domains of the positive function intersections
+  X1 = ?F(ty_rec:normalize(ty_rec:intersect(T1, ty_rec:negate(S)), Fixed, M)),
+  X2 = ?F(explore_function_norm(T1, ty_rec:negate(T2), P, Fixed, M)),
+  R1 = ?F(constraint_set:meet(X1, X2)),
+  %% Continue searching for another arrow ∈ N
+  R2 = ?F(normalize_no_vars({terminal, 1}, S, P, N, Fixed, M)),
+  constraint_set:join(R1, R2);
+normalize_no_vars({node, Function, L_BDD, R_BDD}, S, P, Negated, Fixed, M) ->
+  T1 = ty_function:domain(Function),
+
+  constraint_set:meet(
+    ?F(normalize_no_vars(L_BDD, ty_rec:union(S, T1), [Function | P], Negated, Fixed, M)),
+    ?F(normalize_no_vars(R_BDD, S, P, [Function | Negated], Fixed, M))
+  ).
+
+explore_function_norm(T1, T2, [], Fixed, M) ->
+  NT1 = ?F(ty_rec:normalize(T1, Fixed, M)),
+  NT2 = ?F(ty_rec:normalize(T2, Fixed, M)),
+  constraint_set:join( NT1, NT2 );
+explore_function_norm(T1, T2, [Function | P], Fixed, M) ->
+  NT1 = ?F(ty_rec:normalize(T1, Fixed, M)),
+  NT2 = ?F(ty_rec:normalize(T2, Fixed, M)),
+
+  S1 = ty_function:domain(Function),
+  S2 = ty_function:codomain(Function),
+
+  NS1 = ?F(explore_function_norm(T1, ty_rec:intersect(T2, S2), P, Fixed, M)),
+  NS2 = ?F(explore_function_norm(ty_rec:diff(T1, S1), T2, P, Fixed, M)),
+
+  constraint_set:join(NT1,
+    ?F(constraint_set:join(NT2,
+      ?F(constraint_set:meet(NS1, NS2))))).
+
+substitute(0, _, _) -> 0;
+substitute({terminal, 1}, _, _) ->
+  {terminal, 1};
+substitute({node, TyFunction, L_BDD, R_BDD}, Map, Memo) ->
+  S1 = ty_function:domain(TyFunction),
+  S2 = ty_function:codomain(TyFunction),
+
+  NewS1 = ty_rec:substitute(S1, Map, Memo),
+  NewS2 = ty_rec:substitute(S2, Map, Memo),
+
+  NewTyFunction = ty_function:function(NewS1, NewS2),
+
+  union(
+    intersect(function(NewTyFunction), L_BDD),
+    intersect(negate(function(NewTyFunction)), R_BDD)
+  ).
+
+has_ref(0, _) -> false;
+has_ref({terminal, _}, _) -> false;
+has_ref({node, Function, PositiveEdge, NegativeEdge}, Ref) ->
+  ty_function:has_ref(Function, Ref)
+  orelse
+  has_ref(PositiveEdge, Ref)
+    orelse
+    has_ref(NegativeEdge, Ref).
+
+all_variables(0) -> [];
+all_variables({terminal, _}) -> [];
+all_variables({node, Function, PositiveEdge, NegativeEdge}) ->
+  ty_rec:all_variables(ty_function:domain(Function))
+    ++ ty_rec:all_variables(ty_function:codomain(Function))
+    ++ all_variables(PositiveEdge)
+    ++ all_variables(NegativeEdge).
 
 
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-usage_test() ->
-  %   (int -> int) ^ (1 -> 2)
-  TIa = ty_rec:interval(dnf_var_int:int(ty_interval:interval('*', '*'))),
-  TIb = ty_rec:interval(dnf_var_int:int(ty_interval:interval('*', '*'))),
-  TIc = ty_rec:interval(dnf_var_int:int(ty_interval:interval(1, 1))),
-  TId = ty_rec:interval(dnf_var_int:int(ty_interval:interval(2, 2))),
-
-  Ty_FunctionA = ty_function:function(TIa, TIb),
-  Ty_FunctionB = ty_function:function(TIc, TId),
-
-  B1 = dnf_ty_function:function(Ty_FunctionA),
-  B2 = dnf_ty_function:function(Ty_FunctionB),
-
-  Bdd = dnf_ty_function:intersect(B1, B2),
-
-  false = dnf_ty_function:is_empty(Bdd),
-%%  io:format(user, "~p~n", [Bdd]),
-
-  ok.
+%%normalize2_test_() ->
+%%  {timeout, 3000,
+%%    fun() ->
+%%      %   norm(b, ~b ^ N, []) == { {(b <= 0)} {(N <= b)} }
+%%      Alpha = ty_variable:new("Alpha"),
+%%      Beta = ty_variable:new("Beta"), TyBeta = ty_rec:variable(Beta),
+%%      N = ty_rec:atom(),
+%%
+%%      T1 = TyBeta,
+%%      T2 = ty_rec:intersect(ty_rec:negate(TyBeta), N),
+%%      Res = explore_function_norm(T1, T2, [], sets:new()),
+%%
+%%      io:format(user, "Done ~p~n", [Res]),
+%%
+%%      % TODO check via equivalence instead of syntactically
+%%      Res = [[{Beta, ty_rec:empty(), ty_rec:empty()}], [{Beta, N, ty_rec:any()}]],
+%%
+%%      ok
+%%    end
+%%  }.
 -endif.

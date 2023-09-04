@@ -1,5 +1,5 @@
 -module(type).
--vsn({1,0,0}).
+-vsn({2,0,0}).
 
 % a type provides a basic set of functionalities 
 % representations include:

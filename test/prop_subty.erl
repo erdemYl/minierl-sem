@@ -43,7 +43,7 @@ limited_ast(Size) when Size =< 1 ->
   ]);
 limited_ast(Size) ->
   frequency([
-    % tuples
+    % tuples TODO unbalanced ASTs (left right uneven)
     {5, ?LAZY(?LET({A, B}, {limited_ast(Size div 2), limited_ast(Size div 2)},
         ty_rec:tuple(dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(A, B))))
     ))},

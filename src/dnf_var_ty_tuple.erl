@@ -1,5 +1,5 @@
 -module(dnf_var_ty_tuple).
--vsn({1,3,0}).
+-vsn({2,0,0}).
 
 -define(P, {dnf_ty_tuple, ty_variable}).
 
@@ -8,9 +8,9 @@
 
 -behavior(type).
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
--export([eval/1, is_empty/1, is_any/1]).
+-export([eval/1, is_empty/1, is_any/1, normalize/3, substitute/3]).
 
--export([var/1, tuple/1]).
+-export([var/1, tuple/1, all_variables/1, has_ref/2]).
 
 -type dnf_tuple() :: term().
 -type ty_tuple() :: dnf_tuple(). % ty_tuple:type()
@@ -52,6 +52,60 @@ is_empty({node, _Variable, PositiveEdge, NegativeEdge}) ->
   is_empty(PositiveEdge)
     and is_empty(NegativeEdge).
 
+normalize(Ty, Fixed, M) -> normalize(Ty, [], [], Fixed, M).
+
+normalize(0, _, _, _, _) -> [[]]; % satisfiable
+normalize({terminal, Tuple}, PVar, NVar, Fixed, M) ->
+  case ty_ref:is_normalized_memoized(Tuple, Fixed, M) of
+    true ->
+      % TODO test case
+      error({todo, extract_test_case, memoize_function}); %[[]];
+    miss ->
+      % memoize only non-variable component t0
+      dnf_ty_tuple:normalize(Tuple, PVar, NVar, Fixed, sets:union(M, sets:from_list([Tuple])))
+  end;
+normalize({node, Variable, PositiveEdge, NegativeEdge}, PVar, NVar, Fixed, M) ->
+  constraint_set:merge_and_meet(
+    normalize(PositiveEdge, [Variable | PVar], NVar, Fixed, M),
+    normalize(NegativeEdge, PVar, [Variable | NVar], Fixed, M)
+  ).
+
+
+substitute(T, M, Memo) -> substitute(T, M, Memo, [], []).
+
+substitute(0, _, _, _, _) -> 0;
+substitute({terminal, Tuple}, Map, Memo, Pos, Neg) ->
+  AllPos = lists:map(
+    fun(Var) ->
+      Substitution = maps:get(Var, Map, ty_rec:variable(Var)),
+      ty_rec:pi(tuple, Substitution)
+    end, Pos),
+  AllNeg = lists:map(
+    fun(Var) ->
+      Substitution = maps:get(Var, Map, ty_rec:variable(Var)),
+      NewNeg = ty_rec:negate(Substitution),
+      ty_rec:pi(tuple, NewNeg)
+    end, Neg),
+
+  lists:foldl(fun(Current, All) -> intersect(Current, All) end, tuple(dnf_ty_tuple:substitute(Tuple, Map, Memo)), AllPos ++ AllNeg);
+
+substitute({node, Variable, PositiveEdge, NegativeEdge}, Map, Memo, P, N) ->
+
+  LBdd = substitute(PositiveEdge, Map, Memo, [Variable | P], N),
+  RBdd = substitute(NegativeEdge, Map, Memo, P, [Variable | N]),
+
+  union(LBdd, RBdd).
+
+has_ref(0, _) -> false;
+has_ref({terminal, Tuple}, Ref) ->
+  dnf_ty_tuple:has_ref(Tuple, Ref);
+has_ref({node, _Variable, PositiveEdge, NegativeEdge}, Ref) ->
+  has_ref(PositiveEdge, Ref) orelse has_ref(NegativeEdge, Ref).
+
+all_variables(0) -> [];
+all_variables({terminal, Tuple}) -> dnf_ty_tuple:all_variables(Tuple);
+all_variables({node, Variable, PositiveEdge, NegativeEdge}) ->
+  [Variable] ++ all_variables(PositiveEdge) ++ all_variables(NegativeEdge).
 
 
 -ifdef(TEST).

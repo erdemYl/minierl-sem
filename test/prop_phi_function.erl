@@ -4,10 +4,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -import(prop_subty, [limited_ast/0]).
 
+-export([phi_v0/3]).
+
 % current state:
 % v0, v1 and v2a are exponentially slower than v2b and v3
 % v2b is fastest on average
 % v3 (:= v2a + v2b) is sometimes faster by a constant factor (max 2x), but on average slower by a constant factor ~0.5x
+
 
 % phi from paper covariance and contravariance
 % phi(T1, T2, P0, P+, P-)

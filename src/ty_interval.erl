@@ -1,5 +1,5 @@
 -module(ty_interval).
--vsn({1,0,0}).
+-vsn({2,0,0}).
 
 %% Efficient interval representation
 
@@ -9,7 +9,7 @@
 -behavior(type).
 -export([empty/0, any/0]).
 -export([union/2, intersect/2, diff/2, negate/1, is_any/1]).
--export([is_empty/1, eval/1]).
+-export([is_empty/1, eval/1, normalize/5]).
 
 -behavior(b_interval).
 -export([interval/2, cointerval/2]).
@@ -120,6 +120,17 @@ add_range([{left, B1} | Xs], _A, B) ->
     add_left(Xs, max(B, B1));
 add_range([{right, A1} | _], A, _B) -> [{right, min(A, A1)}];
 add_range([any_int | _], _A, _B) -> any().
+
+normalize(TyInterval, [], [], _Fixed, _) ->
+    % Fig. 3 Line 3
+    case is_empty(TyInterval) of
+        true -> [[]];
+        false -> []
+    end;
+normalize(TyInterval, PVar, NVar, Fixed, M) ->
+    Ty = ty_rec:interval(dnf_var_int:int(TyInterval)),
+    % ntlv rule
+    ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:interval(dnf_var_int:var(Var)) end, M).
 
 
 -ifdef(TEST).

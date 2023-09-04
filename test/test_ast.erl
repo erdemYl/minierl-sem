@@ -79,6 +79,20 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 subty(T1, T2) ->
   ty_rec:is_subtype(test_ast:norm(T1), test_ast:norm(T2)).
 
+normalize(T, Fixed) ->
+  FixedN = sets:from_list(lists:map(
+    fun({var, Name}) -> maybe_new_variable(Name) end, sets:to_list(Fixed))),
+  ty_rec:normalize(test_ast:norm(T), FixedN, sets:new()).
+
+normalize(T1, T2, Fixed) ->
+  FixedN = sets:from_list(lists:map(
+    fun({var, Name}) -> maybe_new_variable(Name) end, sets:to_list(Fixed))),
+  NT1 = test_ast:norm(T1),
+  NT2 = ty_rec:negate(test_ast:norm(T2)),
+  NT3 = ty_rec:intersect(NT1, NT2),
+  ty_rec:normalize(NT3, FixedN, sets:new()).
+
+b() -> atom.
 b(Atom) -> {'atom', Atom}.
 
 % type constructors
@@ -119,9 +133,37 @@ n(X) -> {negation, X}.
 % the variable intersected with each disjunct unions top-type
 % ===============================
 
+norm_substs([]) -> [];
+norm_substs([Sub | Subs]) ->
+  New = maps:from_list(lists:map(fun({K, V}) -> {var_of(K), norm(V)} end, maps:to_list(Sub))),
+
+  [New | norm_substs(Subs)].
+
+norm_css_basic([]) -> [];
+norm_css_basic([Cs | Css]) ->
+  [ norm_cs_basic(Cs) ] ++ norm_css_basic(Css).
+
+norm_cs_basic([]) -> [];
+norm_cs_basic([{S, T} | Cs]) -> [ {norm(S), norm(T)} ] ++ norm_cs_basic(Cs).
+
+norm_css([]) -> constraint_set:set_of_constraint_sets([]);
+norm_css([Cs | Css]) ->
+  constraint_set:set_of_constraint_sets([
+    norm_cs(Cs)
+  ] ++ norm_css(Css)).
+
+norm_cs([]) -> constraint_set:constraint_set([]);
+norm_cs([{V, Ty1, Ty2} | Cs]) -> constraint_set:constraint_set([
+  constraint_set:constraint(var_of(V), norm(Ty1), norm(Ty2))
+] ++ norm_cs(Cs)).
+
+
 norm(int) ->
   Int = dnf_var_int:any(),
   ty_rec:interval(Int);
+norm(atom) ->
+  Atom = dnf_var_ty_atom:any(),
+  ty_rec:atom(Atom);
 norm({'atom', Atom}) ->
   TyAtom = ty_atom:finite([Atom]),
   TAtom = dnf_var_ty_atom:ty_atom(TyAtom),
@@ -162,6 +204,7 @@ norm({union, A, B}) -> ty_rec:union(norm(A), norm(B));
 norm({intersection, A, B}) -> ty_rec:intersect(norm(A), norm(B));
 norm({negation, A}) -> ty_rec:negate(norm(A)).
 
+var_of({var, Name}) -> maybe_new_variable(Name).
 
 maybe_new_variable(Name) ->
   Object = ets:lookup(?VAR_ETS, Name),

@@ -1,16 +1,17 @@
 -module(dnf_ty_tuple).
--vsn({1,3,2}).
+-vsn({2,0,0}).
 
 -define(P, {bdd_bool, ty_tuple}).
+-define(F(Z), fun() -> Z end).
 
 -behavior(eq).
 -export([equal/2, compare/2]).
 
 -behavior(type).
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
--export([eval/1, is_empty/1, is_any/1]).
+-export([eval/1, is_empty/1, is_any/1, normalize/5, substitute/3]).
 
--export([tuple/1]).
+-export([tuple/1, all_variables/1, has_ref/2]).
 
 -type dnf_tuple() :: term().
 -type ty_tuple() :: dnf_tuple(). % ty_tuple:type()
@@ -74,6 +75,79 @@ phi(S1, S2, [Ty | N]) ->
           phi(S1, ty_rec:diff(S2, T2), N)
       end
   ).
+
+normalize(TyTuple, [], [], Fixed, M) ->
+  % optimized NProd rule
+  normalize_no_vars(TyTuple, ty_rec:any(), ty_rec:any(), _NegatedTuples = [], Fixed, M);
+normalize(DnfTyTuple, PVar, NVar, Fixed, M) ->
+  Ty = ty_rec:tuple(dnf_var_ty_tuple:tuple(DnfTyTuple)),
+  % ntlv rule
+  ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:tuple(dnf_var_ty_tuple:var(Var)) end, M).
+
+normalize_no_vars(0, _, _, _, _Fixed, _) -> [[]]; % empty
+normalize_no_vars({terminal, 1}, S1, S2, N, Fixed, M) ->
+  phi_norm(S1, S2, N, Fixed, M);
+normalize_no_vars({node, TyTuple, L_BDD, R_BDD}, BigS1, BigS2, Negated, Fixed, M) ->
+  S1 = ty_tuple:pi1(TyTuple),
+  S2 = ty_tuple:pi2(TyTuple),
+
+  X1 = ?F(normalize_no_vars(L_BDD, ty_rec:intersect(S1, BigS1), ty_rec:intersect(S2, BigS2), Negated, Fixed, M)),
+  X2 = ?F(normalize_no_vars(R_BDD, BigS1, BigS2, [TyTuple | Negated], Fixed, M)),
+  constraint_set:meet(X1, X2).
+
+phi_norm(S1, S2, [], Fixed, M) ->
+  T1 = ?F(ty_rec:normalize(S1, Fixed, M)),
+  T2 = ?F(ty_rec:normalize(S2, Fixed, M)),
+  constraint_set:join(T1, T2);
+phi_norm(S1, S2, [Ty | N], Fixed, M) ->
+  T1 = ?F(ty_rec:normalize(S1, Fixed, M)),
+  T2 = ?F(ty_rec:normalize(S2, Fixed, M)),
+
+  T3 =
+    ?F(begin
+      TT1 = ty_tuple:pi1(Ty),
+      TT2 = ty_tuple:pi2(Ty),
+      X1 = ?F(phi_norm(ty_rec:diff(S1, TT1), S2, N, Fixed, M)),
+      X2 = ?F(phi_norm(S1, ty_rec:diff(S2, TT2), N, Fixed, M)),
+      constraint_set:meet(X1, X2)
+    end),
+
+  constraint_set:join(T1, ?F(constraint_set:join(T2, T3))).
+
+
+substitute(0, _, _) -> 0;
+substitute({terminal, 1}, _, _) ->
+  {terminal, 1};
+substitute({node, TyTuple, L_BDD, R_BDD}, Map, Memo) ->
+  S1 = ty_tuple:pi1(TyTuple),
+  S2 = ty_tuple:pi2(TyTuple),
+
+  NewS1 = ty_rec:substitute(S1, Map, Memo),
+  NewS2 = ty_rec:substitute(S2, Map, Memo),
+
+  NewTyTuple = ty_tuple:tuple(NewS1, NewS2),
+
+  union(
+    intersect(tuple(NewTyTuple), L_BDD),
+    intersect(negate(tuple(NewTyTuple)), R_BDD)
+    ).
+
+has_ref(0, _) -> false;
+has_ref({terminal, _}, _) -> false;
+has_ref({node, Tuple, PositiveEdge, NegativeEdge}, Ref) ->
+  ty_tuple:has_ref(Tuple, Ref)
+    orelse
+    has_ref(PositiveEdge, Ref)
+    orelse
+    has_ref(NegativeEdge, Ref).
+
+all_variables(0) -> [];
+all_variables({terminal, _}) -> [];
+all_variables({node, Tuple, PositiveEdge, NegativeEdge}) ->
+  ty_rec:all_variables(ty_tuple:pi1(Tuple))
+  ++ ty_rec:all_variables(ty_tuple:pi2(Tuple))
+    ++ all_variables(PositiveEdge)
+    ++ all_variables(NegativeEdge).
 
 
 
