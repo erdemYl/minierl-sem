@@ -6,6 +6,7 @@
 % * intervals
 % * products
 % * arrows
+% * maps
 
 -type x() :: term().
 

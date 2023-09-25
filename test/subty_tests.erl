@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2]).
+-import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, struct/2, dict/2, stp/1]).
 
 simple_test_() ->
   Data = lists:map(
@@ -240,3 +240,84 @@ uneven_even_lists_not_comparable_test() ->
   false = subty(Uneven, Even),
 
   ok.
+
+% ====
+% Map tests
+% ====
+
+maps_any_empty_test() ->
+  % struct
+  EmptyS = struct([], false), % type that only contains empty struct
+  AnyS = struct([], true),
+  true = subty(EmptyS, AnyS),
+  false = subty(AnyS, EmptyS),
+  false = subty(EmptyS, none()),
+
+  % dict
+  EmptyD = i([
+    dict(stp(i), none()),
+    dict(stp(a), none()),
+    dict(stp(t), none())
+  ]),
+  % all same, all any map
+  A1 = dict(stp(i), any()),
+  A2 = dict(stp(a), any()),
+  A3 = dict(stp(t), any()),
+  As = [A1, A2, A3],
+
+  true = subty(A1, A3),
+  true = subty(A3, A1),
+  true = lists:all(fun(X) -> subty(AnyS, X) end, As),
+  true = lists:all(fun(X) -> subty(X, AnyS) end, As),
+  true = subty(EmptyS, EmptyD) andalso subty(EmptyD, EmptyS)
+.
+
+dict_interpretation_test() ->
+  S = u([r(1), r(2), r(3)]),
+  T = u([r(1), r(2)]),
+  IntDict = dict(stp(i), S),
+  IntDict2 = dict(stp(i), T),
+  AtomDict = dict(stp(a), S),
+
+  false = subty(IntDict, AtomDict),
+  false = subty(AtomDict, IntDict),
+  true = subty(IntDict2, IntDict)
+.
+
+% D1 = {integer() => T} ∧ {atom() => any()} ∧ {tuple() => none()}  ≤  {integer() => T} = D2
+% D1 !≤ 0
+dict_intersection_test() ->
+  T = r(),
+  D1 = i([
+    dict(stp(i), T),
+    dict(stp(a), any()),
+    dict(stp(t), none())
+  ]),
+  D2 = dict(stp(i), T),
+
+  true = subty(D1, D2),
+  false = subty(D1, none())
+.
+
+% M1 = {1 := a, 2 := b}  !≤≥!  {atom() => atom} = M2
+% M1 ≤ {tuple => any()} = M3
+% M2 ≤ {tuple => any()} = M3
+maps_simple_test() ->
+  M1 = struct(
+    [{r(1), b(a)}, {r(2), b(b)}],
+    true),
+  M2 = dict(stp(a), b(atom)),
+  M3 = dict(stp(t), any()),
+
+  true = subty(M2, M3),
+  false = subty(M2, M1),
+  false = subty(M1, M2),
+  true = subty(M1, M3),
+
+  M4 = struct(
+    [{r(1), b(a)}, {r(2), b(b)}],
+    false),
+
+  true = subty(M4, M2),
+  true = subty(M4, M3).
+
