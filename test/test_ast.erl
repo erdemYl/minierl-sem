@@ -134,6 +134,7 @@ n(X) -> {negation, X}.
 % map type constructors
 struct(Fields, Open) -> {map_struct, Fields, Open}.
 dict(Step, V) -> {map_dict, Step, V}. % always open or: only given step is restricted
+opt(X) -> u(X, none()).
 stp(a) -> atom_key;
 stp(i) -> integer_key;
 stp(t) -> tuple_key.
@@ -216,14 +217,18 @@ norm({'fun', A, B}) ->
 norm({map_struct, Fields, IsOpen}) ->
   LbMappings = #{norm_(Lb) => norm(ValTy) || {Lb, ValTy} <- Fields},
   StMappings = norm_(case IsOpen of true -> any_step(); _ -> empty_step() end),
+  EmptyContained = [] == Fields
+    orelse lists:any(fun
+                       ({_, {union, _, none}}) -> true;
+                       (_)                     -> false end, Fields),
 
-  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(LbMappings, StMappings))),
+  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(EmptyContained, LbMappings, StMappings))),
   ty_rec:map(T);
 norm({map_dict, Step, ValTy}) ->
   LbMappings = #{},
   StMappings = (norm_(any_step()))#{Step := norm(ValTy)},  % dict always open ~ any step
 
-  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(LbMappings, StMappings))),
+  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(_EmptyContained = true, LbMappings, StMappings))),
   ty_rec:map(T);
 norm({map_struct_key_tuple, Tys}) ->
   [Ty1, Ty2 | TyRest] = [norm(T) || T <- lists:reverse(Tys)],

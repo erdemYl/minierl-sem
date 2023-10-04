@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, struct/2, dict/2, stp/1]).
+-import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, struct/2, dict/2, opt/1, stp/1]).
 
 simple_test_() ->
   Data = lists:map(
@@ -245,7 +245,7 @@ uneven_even_lists_not_comparable_test() ->
 % Map tests
 % ====
 
-maps_any_empty_test() ->
+map_any_empty_test() ->
   % struct
   EmptyS = struct([], false), % type that only contains empty struct
   AnyS = struct([], true),
@@ -302,7 +302,7 @@ dict_intersection_test() ->
 % M1 = {1 := a, 2 := b}  !≤≥!  {atom() => atom} = M2
 % M1 ≤ {tuple => any()} = M3
 % M2 ≤ {tuple => any()} = M3
-maps_simple_test() ->
+map_simple_test() ->
   M1 = struct(
     [{r(1), b(a)}, {r(2), b(b)}],
     true),
@@ -319,5 +319,17 @@ maps_simple_test() ->
     false),
 
   true = subty(M4, M2),
-  true = subty(M4, M3).
+  true = subty(M4, M3)
+.
+
+% M1 = {1 := a, 2 := b}  ≤  {1 => a, 2 := b} = M2
+struct_optional_test() ->
+  M1 = struct(
+    [{r(1), b(a)}, {r(2), b(b)}],
+    true),
+  M2 = struct(
+    [{r(1), opt(b(a))}, {r(2), b(b)}],
+    true),
+
+  true = subty(M1, M2).
 

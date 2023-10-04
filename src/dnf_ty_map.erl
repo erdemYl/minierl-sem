@@ -1,9 +1,10 @@
 -module(dnf_ty_map).
--vsn({2,1,3}).
+-vsn({2,1,4}).
 
 -define(P, {bdd_bool, ty_map}).
--define(Get, fun(X) -> fun(#{X := Y}) -> Y end end).
-% why not fun(X, #{X := Y}) -> Y end.  ?
+-define(Get, fun(K) -> fun(#{K := V}) -> V end end).
+% why not fun(K, #{K := V}) -> V end. ? --- because key variable K must be bound beforehand
+% this is different than fun(K, {K, V}) -> V end.
 
 -behavior(eq).
 -export([equal/2, compare/2]).
@@ -12,7 +13,7 @@
 -export([is_any/1, eval/1, is_empty/1, empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([map/1, all_variables/1]).
 
--import(ty_map, [map/2, pi/2]).
+-import(ty_map, [map/3, pi/2]).
 
 -type dnf_map() :: term().
 -type ty_map() :: dnf_map(). % ty_map:type()
@@ -50,11 +51,10 @@ is_empty(TyDnf) -> is_empty(
 ).
 
 is_empty(0, _, _) -> true;
-is_empty({terminal, 1}, P, N) ->
-  phi(P, N);
-is_empty({node, TyMap, Left, Right}, PosTyMap = {_, PosLs, PosSt}, N) ->
-  St = ty_map:steps(TyMap),
-  Ls = ty_map:labels(TyMap),
+is_empty({terminal, 1}, {_, X, _, _} = P, N) ->
+  not X andalso phi(P, N);
+is_empty({node, TyMap, Left, Right}, PosTyMap = {_, X, PosLs, PosSt}, N) ->
+  {_, Y, Ls, St} = TyMap,
   NewSteps = #{S => ty_rec:intersect(TyRef, (?Get(S))(PosSt))
     || S := TyRef <- St},
   LsInt = #{L => ty_rec:intersect(TyRef, pi(L, PosTyMap))
@@ -63,21 +63,22 @@ is_empty({node, TyMap, Left, Right}, PosTyMap = {_, PosLs, PosSt}, N) ->
     || L := TyRef <- PosLs},
   NewLabels = maps:merge(LsInt, PosLsInt),
 
-  is_empty(Left, map(NewLabels, NewSteps), N)
+  is_empty(Left, map(X and Y, NewLabels, NewSteps), N)
     andalso
-    is_empty(Right, map(PosLs, PosSt), [TyMap | N]).
+    is_empty(Right, map(X and not Y, PosLs, PosSt), [TyMap | N]).
 
 
-phi({_, Labels, Steps}, []) when Labels == #{} -> Steps == #{};
-phi({_, Labels, Steps}, []) when Steps  == #{} -> #{} =/= #{a => a || _ := X <- Labels, ty_rec:is_empty(X)};
-phi(_,                  []) -> false;
-phi(P = {_, Labels, Steps}, [N]) ->
+phi({_, _, Labels, Steps}, []) when Labels == #{} -> Steps == #{};
+phi({_, _, Labels, Steps}, []) when Steps  == #{} -> #{} =/= #{a => a || _ := X <- Labels, ty_rec:is_empty(X)};
+phi(_,                     []) -> false;
+phi(P = {_, _, Labels, Steps}, [N]) ->
   S = optional_diff(Steps, ty_map:steps(N)),
   L1 = #{L => ty_rec:diff(TyRef, pi(L, N)) || L := TyRef <- Labels},
   L2 = #{L => ty_rec:diff(pi(L, P), TyRef) || L := TyRef <- ty_map:labels(N)},
-  phi(ty_map:map(maps:merge(L1, L2), S), []);
+  EmptyBypassed = map(false, maps:merge(L1, L2), S),
+  phi(EmptyBypassed, []);
 
-phi(P = {_, Labels, Steps}, [N | Ns]) ->
+phi(P = {_, _, Labels, Steps}, [N | Ns]) ->
   NegLabels = ty_map:labels(N),
   NegSteps = ty_map:steps(N),
 
@@ -101,7 +102,8 @@ phi(P = {_, Labels, Steps}, [N | Ns]) ->
                   % with R = (Labels, Steps)
                   lists:all(
                     fun({L, DiffTyRef}) ->
-                      phi(map(Labels#{L => DiffTyRef}, Steps), Ns) end, Rest)
+                      EmptyBypassed = map(false, Labels#{L => DiffTyRef}, Steps),
+                      phi(EmptyBypassed, Ns) end, Rest)
                 end)
     ;
     false -> phi(P, Ns)

@@ -20,43 +20,15 @@ Open Questions
 Updates
 -----
 
-* **Maps -** starting point
-  * **#{** key() => t() } ~ closed
-  * **#{** key() => t(),  \_=>\_ **}** ~ open
-  * keys can be *integers*, *atoms*, *tuples*
-  * a map has always a **struct** part and a **dict** part
-  * **struct** has forms **{** a := t1(), b := t2() **}**, open or closed, only singleton keys
-  * **dict** has always the form **{** step() => t() **}**, open.
-
-  
-* **Maps -** representation
-  * **#{** integer() => t1(), atom() => t2() **}** ~ **{** integer() => t1() **}** 
-    ∧ **{** atom() => t2() **}** ∧ **{** tuple() => none() **}**
-  * **#{** integer() => t(), \_=>\_ **}** ~ **{** integer() => t() **}**
-    ∧ **{** atom() => any() **}** ∧ **{** tuple() => any() **}**
-  * **#{** 1 := t1(), integer() => t2() **}**
-    * ≠ **{** 1 := t1() **}** ∧ **{** integer() => t2() **}**
-    * 1 has priority and is associated to t1()
-    * currently not expressible in AST test
-    * subtyping can handle this, though
-  
-
-* **Takeaway** 
-  * intersection helps to build *closed* maps out of *open* dicts
-  
-
 * **Map Subtyping**
   * **phi** algorithm for *quasi K-step function* decomposition 
   * K = { integer(), atom(), tuple() }
 
 
-* **Todo**
-  * implement "**=>**" in structs (needed or could be bypassed?)
-  * allow partitioning each step *(e.g. integer() ~ \*..4 ∨ 5..\*)*
-    * partitions form a complete lattice
-    * implement ∨, ∧ for partitions 
-  * typing maps/constraint generation
-  * type operator implementation *(selection, deletion, update)*
+* **News**
+  * ~~implement "**=>**" in structs~~ - **done!**
+  * normalization for maps - **in progress!**
+
 
 Roadmap
 -----
