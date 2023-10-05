@@ -17,7 +17,7 @@
 % any map behaviour
 -callback b_any() -> ty_map().
 
--callback map(EmptyContained :: boolean(), labels(), steps()) -> ty_map().
+-callback map(labels(), steps()) -> ty_map().
 -callback labels(ty_map()) -> labels().
 -callback steps(ty_map()) -> steps().
 -callback pi(l(), ty_map()) -> {assoc(), ty_ref()}.
