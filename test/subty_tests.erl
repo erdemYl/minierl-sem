@@ -300,9 +300,9 @@ dict_intersection_test() ->
 .
 
 % M1 = {1 := a, 2 := b}  !≤≥!  {atom() => atom} = M2
-% M1 ≤ {tuple => any()} = M3
-% M2 ≤ {tuple => any()} = M3
-map_simple_test() ->
+% M1 ≤ {tuple() => any()} = M3
+% M2 ≤ {tuple() => any()} = M3
+maps_simple_test() ->
   M1 = struct(
     [{r(1), b(a)}, {r(2), b(b)}],
     true),
@@ -322,8 +322,8 @@ map_simple_test() ->
   true = subty(M4, M3)
 .
 
-% M1 = {1 := a, 2 := b}  ≤  {1 => a, 2 := b} = M2
-struct_optional_test() ->
+% M1 = {1 := a, 2 := b}  ≤≥!  {1 => a, 2 := b} = M2
+struct_optional1_test() ->
   M1 = struct(
     [{r(1), b(a)}, {r(2), b(b)}],
     true),
@@ -331,5 +331,57 @@ struct_optional_test() ->
     [{r(1), opt(b(a))}, {r(2), b(b)}],
     true),
 
-  true = subty(M1, M2).
+  true = subty(M1, M2),
+  false = subty(M2, M1)
+.
 
+% M1 = {1 := a, 2 => b}  !≤≥!  {1 => a, 2 := b} = M2
+struct_optional2_test() ->
+  M1 = struct(
+    [{r(1), b(a)}, {r(2), opt(b(b))}],
+    true),
+  M2 = struct(
+    [{r(1), opt(b(a))}, {r(2), b(b)}],
+    true),
+
+  false = subty(M1, M2),
+  false = subty(M2, M1)
+.
+
+% M1 = {1 := a, 2 => b, 10 => c}  !≤≥!  {1 => a, 2 := b, 3 => c} = M2
+struct_optional3_test() ->
+  M1 = struct(
+    [{r(1), b(a)}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
+    true),
+  M2 = struct(
+    [{r(1), opt(b(a))}, {r(2), b(b)}, {r(3), opt(b(c))}],
+    true),
+
+  false = subty(M1, M2),
+  false = subty(M2, M1)
+.
+
+% M1 = {1 => a, 2 => b, 10 => c2}  ≤≥!  {1 => a, 2 => b} = M2
+struct_optional4_test() ->
+  M1 = struct(
+    [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
+    true),
+  M2 = struct(
+    [{r(1), opt(b(a))}, {r(2), opt(b(b))}],
+    true),
+
+  true = subty(M1, M2),
+  false = subty(M2, M1)
+.
+
+% M1 = {1 => a, 2 => b, 10 => c2}  !≤≥!  {1 => a, 2 => b, 3 := c} = M2
+struct_optional5_test() ->
+  M1 = struct(
+    [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
+    true),
+  M2 = struct(
+    [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(3), b(c)}],
+    true),
+
+  false = subty(M1, M2),
+  false = subty(M2, M1).

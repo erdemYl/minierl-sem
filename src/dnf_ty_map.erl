@@ -1,10 +1,9 @@
 -module(dnf_ty_map).
--vsn({2,1,4}).
+-vsn({2,2,0}).
 
 -define(P, {bdd_bool, ty_map}).
--define(Get, fun(K) -> fun(#{K := V}) -> V end end).
-% why not fun(K, #{K := V}) -> V end. ? --- because key variable K must be bound beforehand
-% this is different than fun(K, {K, V}) -> V end.
+-define(Get, fun (X) -> fun (#{X := Y}) -> Y end end).
+-define(Pi, fun ({_, L}, Map) -> {_, Ref} = pi(L, Map), Ref end).
 
 -behavior(eq).
 -export([equal/2, compare/2]).
@@ -13,7 +12,7 @@
 -export([is_any/1, eval/1, is_empty/1, empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([map/1, all_variables/1]).
 
--import(ty_map, [map/3, pi/2]).
+-import(ty_map, [map/2, pi/2]).
 
 -type dnf_map() :: term().
 -type ty_map() :: dnf_map(). % ty_map:type()
@@ -51,35 +50,42 @@ is_empty(TyDnf) -> is_empty(
 ).
 
 is_empty(0, _, _) -> true;
-is_empty({terminal, 1}, {_, X, _, _} = P, N) ->
-  not X andalso phi(P, N);
-is_empty({node, TyMap, Left, Right}, PosTyMap = {_, X, PosLs, PosSt}, N) ->
-  {_, Y, Ls, St} = TyMap,
+is_empty({terminal, 1}, P, N) ->
+  phi(P, N);
+is_empty({node, TyMap, Left, Right}, PosTyMap = {_, PosLs, PosSt}, N) ->
+  St = ty_map:steps(TyMap),
+  Ls = ty_map:labels(TyMap),
   NewSteps = #{S => ty_rec:intersect(TyRef, (?Get(S))(PosSt))
     || S := TyRef <- St},
-  LsInt = #{L => ty_rec:intersect(TyRef, pi(L, PosTyMap))
-    || L := TyRef <- Ls},
-  PosLsInt = #{L => ty_rec:intersect(TyRef, pi(L, TyMap))
-    || L := TyRef <- PosLs},
-  NewLabels = maps:merge(LsInt, PosLsInt),
+  LsInt = #{AL => ty_rec:intersect(TyRef, ?Pi(AL, PosTyMap))
+    || AL := TyRef <- Ls},
+  PosLsInt = #{AL => ty_rec:intersect(TyRef, ?Pi(AL, TyMap))
+    || AL := TyRef <- PosLs},
+  % can contain opposites
+  RawMerge = maps:merge(LsInt, PosLsInt),
+  % mandatory is there for all labels
+  % optional is there if not the same label as mandatory present
+   _Without_Opposite_Associations = NewLabels = maps:filter(
+    fun({A, L}, _) ->
+      case A of
+        mandatory -> true; _ -> not maps:is_key({mandatory, L}, RawMerge) end end, RawMerge),
 
-  is_empty(Left, map(X and Y, NewLabels, NewSteps), N)
+  is_empty(Left, map(NewLabels, NewSteps), N)
     andalso
-    is_empty(Right, map(X and not Y, PosLs, PosSt), [TyMap | N]).
+    is_empty(Right, map(PosLs, PosSt), [TyMap | N]).
 
 
-phi({_, _, Labels, Steps}, []) when Labels == #{} -> Steps == #{};
-phi({_, _, Labels, Steps}, []) when Steps  == #{} -> #{} =/= #{a => a || _ := X <- Labels, ty_rec:is_empty(X)};
-phi(_,                     []) -> false;
-phi(P = {_, _, Labels, Steps}, [N]) ->
-  S = optional_diff(Steps, ty_map:steps(N)),
-  L1 = #{L => ty_rec:diff(TyRef, pi(L, N)) || L := TyRef <- Labels},
-  L2 = #{L => ty_rec:diff(pi(L, P), TyRef) || L := TyRef <- ty_map:labels(N)},
-  EmptyBypassed = map(false, maps:merge(L1, L2), S),
-  phi(EmptyBypassed, []);
+phi({_, Labels, Steps}, []) when Labels == #{} -> Steps == #{};
+phi({_, Labels, Steps}, []) when Steps  == #{} -> lists:all(fun(Ty) -> ty_rec:is_empty(Ty) end, maps:values(Labels));
+phi(_,                  []) -> false;
+phi(P = {_, _, Steps}, [N]) ->
+  {Ls1, Ls2, AssocConflict1, AssocConflict2} = optional_diff_labels(P, N),
+  S = optional_diff_steps(Steps, ty_map:steps(N)),
+  not AssocConflict1
+    andalso not AssocConflict2 andalso phi(map(maps:merge(Ls1, Ls2), S), []);
 
-phi(P = {_, _, Labels, Steps}, [N | Ns]) ->
-  NegLabels = ty_map:labels(N),
+phi(P = {_, Labels, Steps}, [N | Ns]) ->
+  _NegLabels = ty_map:labels(N),
   NegSteps = ty_map:steps(N),
 
   % ∀ 𝑘 ∈ Steps . (def(R))𝑘 \ (def(N))𝑘
@@ -93,28 +99,45 @@ phi(P = {_, _, Labels, Steps}, [N | Ns]) ->
     andalso ty_rec:is_empty(StepTuple)
   of
     true ->
-      LsDiff1 = #{L => ty_rec:diff(TyRef, pi(L, N)) || L := TyRef <- Labels},
-      LsDiff2 = #{L => ty_rec:diff(pi(L, P), TyRef) || L := TyRef <- NegLabels},
-      Rest = [{L, TyRef} || L := TyRef <- maps:merge(LsDiff1, LsDiff2), not ty_rec:is_empty(TyRef)],
-      [] == Rest
-        orelse (begin
+      {DiffForLs, DiffForNegLs, AssocConflictLs, AssocConflictNegLs} = optional_diff_labels(P, N),
+      Rest = [{AL, TyRef} || AL := TyRef <- maps:merge(DiffForLs, DiffForNegLs), not ty_rec:is_empty(TyRef)],
+      not AssocConflictLs andalso not AssocConflictNegLs andalso
+        begin
+          [] == Rest orelse
                   % ∀ ℓ ∈ Rest . Φ(R ∧ {ℓ : ¬N(ℓ)}, Ns)  -- important point to test
                   % with R = (Labels, Steps)
                   lists:all(
-                    fun({L, DiffTyRef}) ->
-                      EmptyBypassed = map(false, Labels#{L => DiffTyRef}, Steps),
-                      phi(EmptyBypassed, Ns) end, Rest)
-                end)
+                    fun({AL, DiffTyRef}) ->
+                      phi(map(Labels#{AL => DiffTyRef}, Steps), Ns) end, Rest)
+        end
     ;
     false -> phi(P, Ns)
   end.
 
 
-optional_diff(Steps, NegSteps) ->
+optional_diff_steps(Steps, NegSteps) ->
   % empty steps discarded
   #{S => TyRef || S := TyRef <- Steps,
     not
       ty_rec:is_empty(ty_rec:diff(TyRef, (?Get(S))(NegSteps)))}.
+
+
+optional_diff_labels(TyMapPos = {_, Labels, _}, TyMapNeg = {_, NegLabels, _}) ->
+  O = optional, M = mandatory,
+  % eliminates opposites if necessary
+  % opposite elimination here means: empty check failed
+  LsDiff1 = #{AL => ty_rec:diff(TyRef1, TyRef2)
+    || {A1, L} = AL := TyRef1 <- Labels, begin
+                                           {A2, TyRef2} = pi(L, TyMapNeg),
+                                           A1 /= O orelse A2 /= M end},
+  LsDiff2 = #{AL => ty_rec:diff(TyRef2, TyRef1)
+    || {A1, L} = AL := TyRef1 <- NegLabels, begin
+                                              {A2, TyRef2} = pi(L, TyMapPos),
+                                              A2 /= O orelse A1 /= M end},
+  IsSmaller1 = maps:size(LsDiff1) < maps:size(Labels),
+  IsSmaller2 = maps:size(LsDiff2) < maps:size(NegLabels),
+  {LsDiff1, LsDiff2, IsSmaller1, IsSmaller2}.
+
 
 
 all_variables(0) -> [];
