@@ -1,7 +1,7 @@
 -module(normalize_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [norm_substs/1, norm/1, mu/2, n/1, b/0, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, normalize/3, normalize/2, var_of/1, norm_css/1]).
+-import(test_ast, [norm_substs/1, norm/1, mu/2, n/1, b/0, b/1, f/2, t/0, t/2, i/2, i/1, u/2, u/1, r/1, r/0, struct/2, dict/2, opt/1, stp/1, none/0, any/0, v/1, subty/2, normalize/3, normalize/2, var_of/1, norm_css/1]).
 
 simple_empty_test() ->
   [[]] = normalize(v(alpha), any(), sets:new()),
@@ -150,5 +150,166 @@ example_meet_normalize_test() ->
   ]),
 
   true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
+
+  ok.
+
+% ====
+% Map tests
+% ====
+
+simple_normalize1_map_test() ->
+  % #{int() => int()}  ≤  #{a => β}
+  M1 = i([
+    dict(stp(i), r()),
+    dict(stp(a), none()),
+    dict(stp(t), none())
+  ]),
+  M2 = struct([{v(alpha), opt(v(beta))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), r(), KeyDomain}, {v(beta), r(), any()}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize2_map_test() ->
+  % #{int() => int(), atom() => atom()}  ≤  #{a => β}
+  M1 = i([
+    dict(stp(i), r()),
+    dict(stp(a), b()),
+    dict(stp(t), none())
+  ]),
+  M2 = struct([{v(alpha), opt(v(beta))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), u(r(), b()), KeyDomain}, {v(beta), u(r(), b()), any()}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize3_map_test() ->
+  % #{int() => int(), _ => any()}  ≤  #{a => β}
+  M1 = dict(stp(i), r()),
+  M2 = struct([{v(alpha), opt(v(beta))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), KeyDomain, KeyDomain}, {v(beta), any(), any()}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize4_map_test() ->
+  % #{int() => int(), _ => foo}  ≤  #{a => β}
+  M1 = i([
+    dict(stp(i), r()),
+    dict(stp(a), b(foo)),
+    dict(stp(t), b(foo))
+  ]),
+  M2 = struct([{v(alpha), opt(v(beta))}], false),
+
+  KeyDomain = u([b(), r(), t()]),
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), KeyDomain, KeyDomain}, {v(beta), u(r(), b(foo)), any()}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize5_map_test() ->
+  % #{input := int()}  ≤  #{a => β}
+  M1 = struct([{b(input), r()}], false),
+  M2 = struct([{v(alpha), opt(v(beta))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), b(input), KeyDomain}, {v(beta), r(), any()}]
+  ]),
+
+  true =  Expected == Res,
+
+  ok.
+simple_normalize6_map_test() ->
+  % #{input := int(), _ => any()}  ≤  #{a := β, _ => any()} or #{zeta := teta, _ => any()}
+  M1 = struct([{b(input), r()}], true),
+  M2 = struct([{v(alpha), v(beta)}], true),
+  M3 = struct([{v(zeta), v(teta)}], true),
+
+  Res = normalize(M1, u(M2, M3), sets:new()),
+
+  Expected = norm_css([
+    [{v(alpha), b(input), b(input)}, {v(beta), r(), any()}],
+    [{v(zeta), b(input), b(input)}, {v(teta), r(), any()}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize7_map_test() ->
+  % #{input := int(), _ => any()}  ≤  #{input := bool, a => β}
+  M1 = struct([{b(input), r()}], true),
+  M2 = struct([
+    {b(input), b(bool)},
+    {v(alpha), opt(v(beta))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+  Expected = [],
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize8_map_test() ->
+  % #{input := int(), _ => any()}  ≤  #{input := 1, a => β}
+  M1 = struct([{b(input), r()}], true),
+  M2 = struct([
+    {b(input), r(1)},
+    {v(alpha), opt(v(beta))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+  Expected = [],
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize9_map_test() ->
+  % #{input := int()}  ≤  #{input := 1, _ => any()}
+  M1 = struct([{b(input), r()}], false),
+  M2 = struct([{b(input), r(1)}], true),
+
+  Res = normalize(M1, M2, sets:new()),
+  Expected = [],
+
+  true = Expected == Res,
+
+  ok.
+simple_normalize10_map_test() ->
+  % #{in := 1, out := 2}  ≤  #{a := 1, b := teta}
+  M1 = struct([{b(in), r(1)}, {b(out), r(2)}], false),
+  M2 = struct([{v(alpha), r(1)}, {v(beta), v(teta)}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  U = u(b(in), b(out)),
+  Expected = norm_css([
+    [{v(alpha), U, U}, {v(beta), U, U}, {v(teta), r(2), any()}]
+  ]),
+
+  true = Expected == Res,
 
   ok.

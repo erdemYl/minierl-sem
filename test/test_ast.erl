@@ -112,6 +112,7 @@ v(VariableName) -> {var, VariableName}.
 r() -> int.
 r(X) -> {integer, X}.
 
+t() -> tuple.
 t(X, Y) -> {'tuple', X, Y}.
 
 mu(Var, Ty) -> {mu, Var, Ty}.
@@ -180,6 +181,9 @@ norm_cs([{V, Ty1, Ty2} | Cs]) -> constraint_set:constraint_set([
 norm(int) ->
   Int = dnf_var_int:any(),
   ty_rec:interval(Int);
+norm(tuple) ->
+  Tuple = dnf_var_ty_tuple:any(),
+  ty_rec:tuple(Tuple);
 norm(atom) ->
   Atom = dnf_var_ty_atom:any(),
   ty_rec:atom(Atom);
@@ -247,6 +251,7 @@ norm({negation, A}) -> ty_rec:negate(norm(A)).
 norm_(L = {atom, _}) -> {atom_key, norm(L)};
 norm_(L = {integer, _}) -> {integer_key, norm(L)};
 norm_(L = {map_struct_key_tuple, _}) -> {tuple_key, norm(L)};
+norm_(L = {var, _}) -> {var_key, norm(L)};
 norm_(#{} = Steps) -> #{St => norm(Ty) || St := Ty <- Steps}.
 
 

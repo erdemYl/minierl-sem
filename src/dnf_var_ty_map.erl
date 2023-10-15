@@ -1,5 +1,5 @@
 -module(dnf_var_ty_map).
--vsn({2,1,0}).
+-vsn({2,2,0}).
 
 -define(P, {dnf_ty_map, ty_variable}).
 
@@ -9,7 +9,7 @@
 -behavior(type).
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 
--export([var/1, map/1, all_variables/1]).
+-export([var/1, map/1, normalize/3, all_variables/1]).
 
 -type dnf_map() :: term().
 -type ty_map() :: dnf_map(). % ty_map:type()
@@ -50,6 +50,23 @@ is_empty({terminal, Map}) ->
 is_empty({node, _Variable, PositiveEdge, NegativeEdge}) ->
   is_empty(PositiveEdge)
     and is_empty(NegativeEdge).
+
+normalize(Ty, Fixed, M) -> normalize(Ty, [], [], Fixed, M).
+
+normalize(0, _, _, _, _) -> [[]]; % satisfiable
+normalize({terminal, Map}, PVar, NVar, Fixed, M) ->
+  case ty_ref:is_normalized_memoized(Map, Fixed, M) of
+    true ->
+      error({todo, extract_test_case, memoize_function}); %[[]];
+    miss ->
+      % memoize only non-variable component t0
+      dnf_ty_map:normalize(Map, PVar, NVar, Fixed, sets:union(M, sets:from_list([Map])))
+  end;
+normalize({node, Variable, PositiveEdge, NegativeEdge}, PVar, NVar, Fixed, M) ->
+  constraint_set:merge_and_meet(
+    normalize(PositiveEdge, [Variable | PVar], NVar, Fixed, M),
+    normalize(NegativeEdge, PVar, [Variable | NVar], Fixed, M)
+  ).
 
 
 all_variables(0) -> [];

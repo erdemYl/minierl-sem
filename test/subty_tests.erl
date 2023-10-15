@@ -302,7 +302,7 @@ dict_intersection_test() ->
 % M1 = {1 := a, 2 := b}  !≤≥!  {atom() => atom} = M2
 % M1 ≤ {tuple() => any()} = M3
 % M2 ≤ {tuple() => any()} = M3
-maps_simple_test() ->
+map_simple_test() ->
   M1 = struct(
     [{r(1), b(a)}, {r(2), b(b)}],
     true),
@@ -361,7 +361,7 @@ struct_optional3_test() ->
   false = subty(M2, M1)
 .
 
-% M1 = {1 => a, 2 => b, 10 => c2}  ≤≥!  {1 => a, 2 => b} = M2
+% M1 = {1 => a, 2 => b, 10 => c}  ≤≥!  {1 => a, 2 => b} = M2
 struct_optional4_test() ->
   M1 = struct(
     [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
@@ -374,7 +374,7 @@ struct_optional4_test() ->
   false = subty(M2, M1)
 .
 
-% M1 = {1 => a, 2 => b, 10 => c2}  !≤≥!  {1 => a, 2 => b, 3 := c} = M2
+% M1 = {1 => a, 2 => b, 10 => c}  !≤≥!  {1 => a, 2 => b, 3 := c} = M2
 struct_optional5_test() ->
   M1 = struct(
     [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
@@ -384,4 +384,16 @@ struct_optional5_test() ->
     true),
 
   false = subty(M1, M2),
+  false = subty(M2, M1)
+.
+
+map_last_test() ->
+  M1 = struct(
+    [{r(1), opt(b(a))}, {r(3), none()}], false
+  ),
+  M2 = struct(
+    [{r(1), opt(b(a))}], false
+  ),
+
+  true = subty(M1, M2),
   false = subty(M2, M1).

@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({2,0,1}).
+-vsn({2,0,2}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -215,7 +215,13 @@ normalize(TyRef, Fixed, M) ->
                   [] -> [];
                   _ ->
                     Res4 = dnf_var_ty_function:normalize(Ty#ty.function, Fixed, M),
-                    constraint_set:merge_and_meet(Res3, Res4)
+                    Res5 = constraint_set:merge_and_meet(Res3, Res4),
+                    case Res5 of
+                      [] -> [];
+                      _ ->
+                        MapNormalize = dnf_var_ty_map:normalize(Ty#ty.map, Fixed, M),
+                        constraint_set:merge_and_meet(Res5, MapNormalize)
+                    end
                 end
           end
       end
