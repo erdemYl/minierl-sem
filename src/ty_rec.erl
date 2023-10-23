@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({2,0,2}).
+-vsn({2,0,3}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -291,13 +291,14 @@ all_variables(TyRef) ->
     interval = Ints,
     tuple = Tuples,
     function = Functions,
-    map = _Maps % TODO all variables
+    map = Maps
   } = ty_ref:load(TyRef),
 
   lists:usort(dnf_var_ty_atom:all_variables(Atoms)
   ++ dnf_var_int:all_variables(Ints)
   ++ dnf_var_ty_tuple:all_variables(Tuples)
-  ++ dnf_var_ty_function:all_variables(Functions)).
+  ++ dnf_var_ty_function:all_variables(Functions)
+  ++ dnf_var_ty_map:all_variables(Maps)).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

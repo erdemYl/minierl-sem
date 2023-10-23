@@ -387,6 +387,7 @@ struct_optional5_test() ->
   false = subty(M2, M1)
 .
 
+% M1 = {1 => a, 3 := none, _ => none}  ≤≥!  {1 => a, _ => none} = M2
 map_last_test() ->
   M1 = struct(
     [{r(1), opt(b(a))}, {r(3), none()}], false
