@@ -1,17 +1,17 @@
 -module(dnf_ty_map).
--vsn({2,5,0}).
+-vsn({2,6,0}).
 
 -define(P, {bdd_bool, ty_map}).
+-define(OPT, optional).
+-define(MAN, mandatory).
 -define(F(Z), fun() -> Z end).
--define(MRG(F, M1, M2), merge_with(fun(_, X, Y) -> F(X, Y) end, M1, M2)).
--define(Pi, fun(X, Y, M) -> {_, T1} = pi(Y, M), T2 = pi_var(X, M), u([T1, T2]) end).
 
 -behavior(eq).
 -export([equal/2, compare/2]).
 
 -behavior(type).
 -export([is_any/1, eval/1, is_empty/1, empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
--export([map/1, normalize/5, all_variables/1]).
+-export([map/1, to_unf/1, normalize/5, all_variables/1]).
 
 -import(ty_map, [map/2, pi/2, pi_var/2]).
 -import(maps, [values/1, is_key/2, merge_with/3, filtermap/2]).
@@ -19,6 +19,7 @@
 -type dnf_map() :: term().
 -type ty_map() :: dnf_map(). % ty_map:type()
 -type dnf_ty_map() :: term().
+-type unf_map() :: term().
 
 -spec map(ty_map()) -> dnf_ty_map().
 map(TyMap) -> gen_bdd:element(?P, TyMap).
@@ -45,6 +46,19 @@ equal(B1, B2) -> gen_bdd:equal(?P, B1, B2).
 compare(B1, B2) -> gen_bdd:compare(?P, B1, B2).
 
 
+-spec to_unf(dnf_map()) -> unf_map().
+to_unf(0) -> ty_unf_map:empty();
+to_unf({terminal, 1}) -> ty_unf_map:any();
+to_unf(TyDnf) ->
+  traverse_dnf(TyDnf, ty_map:b_anymap(), _NegatedMaps = [],
+    fun(P, Ns) ->
+      lists:foldr(
+        fun(Neg, Pos) -> ty_unf_map:diff(Pos, Neg) end,
+        ty_unf_map:map(P),
+        [ty_unf_map:map(N) || N <- Ns])
+    end
+).
+
 is_empty(TyDnf) -> traverse_dnf(
   TyDnf,
   ty_map:b_anymap(),
@@ -56,23 +70,9 @@ traverse_dnf(0, _, _, Phi) -> Phi(ty_map:b_empty(), []);
 traverse_dnf({terminal, 1}, P, N, Phi) ->
   Phi(P, N);
 traverse_dnf({node, TyMap, Left, Right}, PosTyMap = {_, PosLs, PosSt}, N, Phi) ->
-  {_, Ls, St} = TyMap,
-  NewSteps = ?MRG(fun ty_rec:intersect/2, St, PosSt),
-  LsInt    = #{AL => ty_rec:intersect(TyRef, ?Pi(AL, L, PosTyMap)) || AL = {_, L} := TyRef <- Ls},
-  PosLsInt = #{AL => ty_rec:intersect(TyRef, ?Pi(AL, L, TyMap)) || AL = {_, L} := TyRef <- PosLs},
-  % can contain opposites
-  RawMerge = maps:merge(LsInt, PosLsInt),
-  % mandatory is there for all labels
-  % optional is there if not the same label as mandatory present
-   _Without_Opposite_Associations = NewLabels = maps:filter(fun({A, L}, _) ->
-     case A of
-       mandatory -> true;
-       optional -> not is_key({mandatory, L}, RawMerge)
-     end
-                                                            end, RawMerge),
   andalso_(
-    ?F(traverse_dnf(Left, map(NewLabels, NewSteps), N, Phi)),
-    ?F(traverse_dnf(Right, map(PosLs, PosSt), [TyMap | N], Phi))
+    ?F(traverse_dnf(Left, ty_map:b_intersect(TyMap, PosTyMap), N, Phi)),
+    ?F(traverse_dnf(Right, ty_map:map(PosLs, PosSt), [TyMap | N], Phi))
   ).
 
 andalso_(L, R) ->
@@ -82,65 +82,48 @@ andalso_(L, R) ->
     CSets -> constraint_set:merge_and_meet(CSets, R())
   end.
 
-
 phi({_, Labels, Steps}, []) ->
-  lists:all(fun ty_rec:is_empty/1, values(Labels))
-  andalso #{} == Steps;
-phi(P = {_, _, Steps}, [N]) -> {_, _, NegSteps} = N,
-  {Ls, Conflict} = labels_diff(P, N),
-  St = steps_diff(Steps, NegSteps),
-  not Conflict andalso phi(map(Ls, St), []);
-
-phi(P = {_, Labels, Steps}, [N | Ns]) -> {_, _, NegSteps} = N,
+  #{} == filter_empty_labels(Labels) andalso
+    #{} == Steps;
+phi(P, [N]) ->
+  {_, LsDiff, StD} = ty_map:b_diff(P, N),
+  StDiff = maps:filter(fun(_, TyRef) -> not ty_rec:is_empty(TyRef) end, StD),
+  phi(map(LsDiff, StDiff), []);
+phi(P = {_, Labels, Steps}, [N | Ns]) ->
+  % ∀ ℓ ∈ L . P(ℓ) \ N(ℓ)
   % ∀ 𝑘 ∈ Steps . (def(P))𝑘 \ (def(N))𝑘
-  #{atom_key := StepAtom, integer_key := StepInt, tuple_key := StepTuple} = ?MRG(fun ty_rec:diff/2, Steps, NegSteps),
+  {_, LsDiff, StDiff} = ty_map:b_diff(P, N),
+
+  #{atom_key := StepAtom,
+    integer_key := StepInt,
+    tuple_key := StepTuple} = StDiff,
+
   % ∀ 𝑘 . (def(P))𝑘 \ (def(N))𝑘 ~ 0
   case ty_rec:is_empty(StepAtom)
     andalso ty_rec:is_empty(StepInt)
     andalso ty_rec:is_empty(StepTuple)
   of
     true ->
-      % ∀ ℓ ∈ L . P(ℓ) \ N(ℓ)
-      {LsDiff, Conflict} = labels_diff(P, N),
       % ∀ ℓ ∈ L . P(ℓ) \ N(ℓ) <> 0
-      Rest = [{AL, TyRef} || AL := TyRef <- LsDiff, not ty_rec:is_empty(TyRef)],
-      not Conflict andalso
-        (
-          [] == Rest orelse
-                  % ∀ ℓ ∈ Rest . Φ(P ∧ {ℓ : ¬N(ℓ)}, Ns)
-                  lists:all(
-                    fun({AL, DiffTyRef}) ->
-                      phi(map(Labels#{AL => DiffTyRef}, Steps), Ns) end, Rest)
-        );
+      Rest = filter_empty_labels(LsDiff),
+      #{} == Rest orelse
+        % ∀ ℓ ∈ Rest . Φ(P ∧ {ℓ : ¬N(ℓ)}, Ns)
+        lists:all(
+          fun({AL, DiffTyRef}) ->
+            phi(map(Labels#{AL => DiffTyRef}, Steps), Ns)
+          end,
+          maps:to_list(Rest))
+    ;
     false -> phi(P, Ns)
   end.
 
-steps_diff(Steps, NegSteps) ->
-  % empty steps discarded
-  maps:filter(fun(S, TyRef1) ->
-      #{S := TyRef2} = NegSteps,
-      not ty_rec:is_empty(ty_rec:diff(TyRef1, TyRef2)) end, Steps).
-
-labels_diff(PosTyMap = {_, Labels, _}, NegTyMap = {_, NegLabels, _}) ->
-  L1 = #{AL1 => ty_rec:diff(u([TyRef1, TyRef11]), u([TyRef2, TyRef22])) || AL1 = {A1, L = {Tag, _}} := TyRef1 <- Labels,
-    begin
-      {A2, TyRef2} = pi(L, NegTyMap),
-      TyRef22 = pi_var(AL1, NegTyMap),
-      TyRef11 = pi_var(AL1, PosTyMap),
-      A1 == A2 orelse A2 == optional orelse var_key == Tag
+filter_empty_labels(Ls) ->
+  maps:filter(fun({A, _}, TyRef) ->
+    case A of
+      ?OPT -> true;
+      ?MAN -> not ty_rec:is_empty(TyRef)
     end
-    },
-  L2 = #{{A1, L} => ty_rec:diff(u([TyRef1, TyRef11]), u([TyRef2, TyRef22])) || AL2 = {A2, L = {Tag, _}} := TyRef2 <- NegLabels,
-    begin
-      {A1, TyRef1} = pi(L, PosTyMap),
-      TyRef11 = pi_var(AL2, PosTyMap),
-      TyRef22 = pi_var(AL2, NegTyMap),
-      A1 == A2 orelse A2 == optional orelse var_key == Tag
-    end
-    },
-  LsDiff = maps:merge(L1, L2),
-  AssociationConflict = maps:size(L1) < maps:size(Labels) orelse maps:size(L2) < maps:size(NegLabels),
-  {LsDiff, AssociationConflict}.
+              end, Ls).
 
 
 normalize(TyMap, [], [], Fixed, M) ->
@@ -169,25 +152,21 @@ phi_norm(Fixed, M) -> fun
       KeyC2 = constrain_key_vars(P, N, Fixed, M),
 
       % ∀ 𝑘 ∈ Steps . (def'(P))𝑘 \ (def'(N))𝑘
-      StepsDiff = var_steps_diff(Labels, Steps, NegLabels, NegSteps),
+      StDiff = var_steps_diff(Labels, Steps, NegLabels, NegSteps),
       % ∀ ℓ ∈ L . P(ℓ)' \ N(ℓ)'
-      {LsDiff, Conflict} = labels_diff(P, N),
+      {_, LsDiff, _} = ty_map:b_diff(P, N),
 
-      case Conflict of
-        true -> []; % unsatisfied
-        false ->
-          StepConstraints  = [?F(ty_rec:normalize(TyRef, Fixed, M)) || _ := TyRef <- StepsDiff],
-          LabelConstraints = [
-            begin
-              X = ?F(ty_rec:normalize(TyRef, Fixed, M)),
-              Y = ?F(Norm(map(Labels#{AL => TyRef}, Steps), Ns)),
-              ?F(constraint_set:join(X, Y))
-            end
-            || AL := TyRef <- LsDiff
-          ],
-          Constraints = lazy_meet([KeyC1, KeyC2 | StepConstraints ++ LabelConstraints]),
-          constraint_set:join(Constraints, ?F(Norm(P, Ns)))
-      end
+      StepConstraints  = [?F(ty_rec:normalize(TyRef, Fixed, M)) || _ := TyRef <- StDiff],
+      LabelConstraints = [
+        begin
+          X = ?F(elim_lbl_conflict(ty_rec:normalize(TyRef, Fixed, M), A)),
+          Y = ?F(elim_lbl_conflict(Norm(map(Labels#{AL => TyRef}, Steps), Ns), A)),
+          ?F(constraint_set:join(X, Y))
+        end
+        || AL = {A, _} := TyRef <- LsDiff
+      ],
+      Constraints = lazy_meet([KeyC1, KeyC2 | StepConstraints ++ LabelConstraints]),
+      constraint_set:join(Constraints, ?F(Norm(P, Ns)))
                       end.
 
 var_steps_diff(Labels, Steps, NegLabels, NegSteps) ->
@@ -231,13 +210,14 @@ constrain_key_vars(TyMap1, TyMap2, Fixed, M) ->
          Lower = case Flag of 1 -> ty_rec:diff(TyVar, DefinedKeys2); 2 -> ty_rec:diff(DefinedKeys1, TyVar) end,
          ?F(ty_rec:normalize(Lower, Fixed, M));
        mandatory ->
-         LabelKeys = u([TyRef || {AA, {_, TyRef}} := _ <- Labels2, mandatory == AA]),
-         case LabelKeys == ty_rec:empty() of
-           true -> ?F([]);
-           false ->
+         case [TyRef || {AA, {_, TyRef}} := _ <- Labels2, mandatory == AA] of
+           [] when Flag == 1 -> ?F([[]]); % case: no mandatory keys in neg map
+           [] when Flag == 2 -> ?F([]); % case: no mandatory keys in pos map
+           X ->
+             LabelKeys = u(X),
              Lower = ty_rec:diff(LabelKeys, TyVar),
              Upper = ty_rec:diff(TyVar, LabelKeys),
-             ?F(andalso_(
+             ?F(constraint_set:meet(
                ?F(ty_rec:normalize(Lower, Fixed, M)),
                ?F(ty_rec:normalize(Upper, Fixed, M))
              ))
@@ -250,6 +230,12 @@ constrain_key_vars(TyMap1, TyMap2, Fixed, M) ->
   _Constrain_Map2_With_Map1 = C2 = Constrain(TyMap2, TyMap1, 2),
   ?F(constraint_set:meet(C1, C2)).
 
+elim_lbl_conflict(_Constraints = C, _Association = A) ->
+  case {C, A} of
+    {[[]], ?OPT} -> []; % !must! be mandatory
+    {[], ?OPT} -> [[]]; % ⊥ exists as solution
+    _ -> C
+  end.
 
 lazy_meet(Cs) -> lists:foldr(fun(F, A) -> ?F(constraint_set:meet(F, A)) end, ?F([[]]), Cs).
 u(Tys) -> lists:foldr(fun ty_rec:union/2, ty_rec:empty(), Tys).

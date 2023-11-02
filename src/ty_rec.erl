@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({2,0,3}).
+-vsn({2,0,4}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -15,7 +15,7 @@
 
 -export([is_equivalent/2, is_subtype/2, normalize/3]).
 
--export([substitute/2, substitute/3, pi/2, all_variables/1]).
+-export([substitute/2, substitute/3, pi/2, pi_all/1, all_variables/1]).
 
 -record(ty, {atom, interval, tuple, function, map}).
 
@@ -284,6 +284,10 @@ pi(function, TyRef) ->
 pi(map, TyRef) ->
   Ty = ty_ref:load(TyRef),
   Ty#ty.map.
+
+pi_all(TyRef) ->
+  Ty = ty_ref:load(TyRef),
+  {Ty#ty.atom, Ty#ty.interval, Ty#ty.tuple, Ty#ty.function, Ty#ty.map}.
 
 all_variables(TyRef) ->
   #ty{

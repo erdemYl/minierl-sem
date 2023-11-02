@@ -27,8 +27,10 @@ Updates
 
 * **News**
   * ~~implement "**=>**" in structs~~ - **done!**
-  * normalization for maps - **in progress!**
-
+  * ~~normalization for maps~~ - **done!**
+  * experimental **unf** maps for type operators
+    * *Typing Records, Maps and Structs*: Theorem 4.2
+    * Needs testing
 
 Roadmap
 -----

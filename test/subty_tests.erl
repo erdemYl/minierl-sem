@@ -397,4 +397,14 @@ map_last_test() ->
   ),
 
   true = subty(M1, M2),
-  false = subty(M2, M1).
+  false = subty(M2, M1)
+.
+
+% #{alpha => int(), _ => any()}  ≤  #{beta => any()}
+%%map_with_vars1_test() ->
+%%  M1 = struct(
+%%    [{v(alpha), opt(r())}], true),
+%%  M2 = struct(
+%%    [{v(beta), opt(any())}], false),
+%%
+%%  true = subty(M1, M2).

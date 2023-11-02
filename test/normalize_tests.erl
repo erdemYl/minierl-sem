@@ -252,10 +252,10 @@ simple_normalize6_map_test() ->
   M3 = struct([{v(zeta), v(theta)}], true),
 
   Res = normalize(M1, u(M2, M3), sets:new()),
-
   _Expected = norm_css([
     [{v(alpha), b(input), b(input)}, {v(beta), r(), any()}],
     [{v(zeta), b(input), b(input)}, {v(theta), r(), any()}]
+    % and something
   ]),
 
   true = Res,
@@ -325,7 +325,6 @@ norm_map1_test() ->
   ]),
 
   Res = normalize(M1, M2, sets:new()),
-
   Expected = norm_css([
     [{v(alpha), none(), r()}, {v(beta), r(), any()}]
   ]),
@@ -368,5 +367,75 @@ norm_map2_test() ->
   ]),
 
   true = Expected == Res,
+
+  ok.
+norm_map3_test() ->
+  % #{}  ≤  #{zeta := theta}
+  M1 = struct([], false),
+  M2 = struct([{v(zeta), v(theta)}], false),
+
+  Res = normalize(i(M1, M2), M1, sets:new()),
+  Expected = [[]],
+
+  true = Expected == Res,
+
+  ok.
+norm_map4_test() ->
+  % #{a => any()}  ≤  #{any() => any()}
+  M1 = struct([{v(alpha), opt(any())}], false),
+  M2 = struct([], true),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), none(), KeyDomain}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+norm_map5_test() ->
+  % #{a := 2}  ≤  #{b => 2},
+  M1 = struct([{v(alpha), r(2)}], false),
+  M2 = struct([{v(beta), opt(r(2))}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), none(), v(beta)}, {v(beta), none(), KeyDomain}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+norm_map6_test() ->
+  % #{a => int(), _ => any()}  ≤  #{b => any()}
+  M1 = struct(
+    [{v(alpha), opt(r())}], true),
+  M2 = struct(
+    [{v(beta), opt(any())}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  KeyDomain = u([b(), r(), t()]),
+  Expected = norm_css([
+    [{v(alpha), none(), v(beta)}, {v(beta), KeyDomain, KeyDomain}]
+  ]),
+
+  true = Expected == Res,
+
+  ok.
+norm_map7_test() ->
+  % #{input => 1}  ≤  #{input := 1}
+  M1 = struct(
+    [{b(input), opt(r(1))}], false),
+  M2 = struct(
+    [{b(input), r(1)}], false),
+
+  Res = normalize(M1, M2, sets:new()),
+
+  true = [] == Res,
 
   ok.

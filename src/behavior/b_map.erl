@@ -1,5 +1,5 @@
 -module(b_map).
--vsn({2,2,2}).
+-vsn({2,2,3}).
 
 -export_type([labels/0, steps/0]).
 
@@ -17,12 +17,14 @@
 -type assoc()   :: optional | mandatory.
 
 
+-callback map(labels(), steps()) -> ty_map().
 % any map behaviour
 -callback b_anymap() -> ty_map().
 % 0 type behaviour embedded in map structure (not the empty map!)
 -callback b_empty() -> ty_map().
 
--callback map(labels(), steps()) -> ty_map().
+-callback b_intersect(ty_map(), ty_map()) -> ty_map().
+-callback b_diff(ty_map(), ty_map()) -> ty_map().
 
 % TODO explain
 % projects a label, without variable context
@@ -33,6 +35,8 @@
 % projects a label, with variable context
 % association used while projecting
 -callback pi_var(al(), ty_map()) -> ty_ref().
+
+-callback pi_tag(key_tag(), ty_map()) -> ty_ref().
 
 % int() | atom() | tuple()
 -callback key_domain() -> ty_ref().
