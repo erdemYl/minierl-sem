@@ -252,7 +252,7 @@ substitute({node, TyMap, Left, Right}, SubstituteMap, Memo) ->
     S1 = ty_rec:substitute(TyRef1, SubstituteMap, Memo),
     S2 = ty_rec:substitute(TyRef2, SubstituteMap, Memo),
     AL = {A, {Tag, S1}},
-    Discard = ?MAN == A andalso (ty_rec:is_empty(S2) orelse not ty_rec:is_finite(S1)),
+    Discard = ?MAN == A andalso ty_rec:is_empty(S2),
     case Discard of
       true ->
         Acc;

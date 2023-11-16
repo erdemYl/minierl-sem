@@ -49,7 +49,6 @@ normalize(0, _, _, _, _) -> [[]]; % satisfiable
 normalize({terminal, Map}, PVar, NVar, Fixed, M) ->
   case ty_ref:is_normalized_memoized(Map, Fixed, M) of
     true ->
-      % TODO test case
       error({todo, extract_test_case, memoize_function}); %[[]];
     miss ->
       % memoize only non-variable component t0
