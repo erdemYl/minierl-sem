@@ -1,5 +1,5 @@
 -module(ty_ref).
--vsn({2,0,1}).
+-vsn({2,0,2}).
 
 -export([any/0, store/1, load/1, new_ty_ref/0, define_ty_ref/2, is_empty_cached/1, store_is_empty_cached/2, store_recursive_variable/2, check_recursive_variable/1]).
 -export([memoize/1, is_empty_memoized/1, reset/0, is_normalized_memoized/3]).
@@ -79,19 +79,23 @@ define_any() ->
   % create map top
   DnfVarMapAny = dnf_var_ty_map:any(),
 
+  DnfVarRelMapAny = dnf_var_relation_map:any(),
+
   % union
   Ty1 = ty_rec:interval(DnfVarIntervalAny),
   Ty2 = ty_rec:tuple(DnfVarTupleAny),
   Ty3 = ty_rec:atom(DnfVarAtomAny),
   Ty4 = ty_rec:function(DnfVarFunctionAny),
   Ty5 = ty_rec:map(DnfVarMapAny),
+  Ty6 = ty_rec:relmap(DnfVarRelMapAny),
 
   U1 = ty_rec:union(Ty1, Ty2),
   U2 = ty_rec:union(U1, Ty3),
   % note: applying the union on U2 and Ty4 already defines ANY at some ty_ref other than 0 automatically
   % this breaks the property that for every ty there is only one entry in the unique table
   U3 = ty_rec:union(U2, Ty4),
-  U = ty_rec:union(U3, Ty5),
+  U4 = ty_rec:union(U3, Ty5),
+  U = ty_rec:union(U4, Ty6),
 
   % define
   ty_ref:define_ty_ref(Any, ty_ref:load(U)),

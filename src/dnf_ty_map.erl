@@ -1,5 +1,5 @@
 -module(dnf_ty_map).
--vsn({2,6,0}).
+-vsn({2,6,1}).
 
 -define(P, {bdd_bool, ty_map}).
 -define(OPT, optional).
@@ -10,8 +10,10 @@
 -export([equal/2, compare/2]).
 
 -behavior(type).
--export([is_any/1, eval/1, is_empty/1, empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
--export([map/1, to_unf/1, normalize/5, all_variables/1]).
+-export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
+-export([eval/1, is_empty/1, is_any/1, normalize/5, substitute/3]).
+
+-export([map/1, to_unf/1, all_variables/1]).
 
 -import(ty_map, [map/2, pi/2, pi_var/2]).
 -import(maps, [values/1, is_key/2, merge_with/3, filtermap/2]).
@@ -236,9 +238,41 @@ elim_lbl_conflict(_Constraints = C, _Association = A) ->
     {[], ?OPT} -> [[]]; % ⊥ exists as solution
     _ -> C
   end.
-
 lazy_meet(Cs) -> lists:foldr(fun(F, A) -> ?F(constraint_set:meet(F, A)) end, ?F([[]]), Cs).
 u(Tys) -> lists:foldr(fun ty_rec:union/2, ty_rec:empty(), Tys).
+
+
+substitute(0, _, _) -> 0;
+substitute({terminal, 1}, _, _) ->
+  {terminal, 1};
+substitute({node, TyMap, Left, Right}, SubstituteMap, Memo) ->
+  {_, Labels, Steps} = TyMap,
+
+  NewLs = maps:fold(fun({A, {Tag, TyRef1}}, TyRef2, Acc) ->
+    S1 = ty_rec:substitute(TyRef1, SubstituteMap, Memo),
+    S2 = ty_rec:substitute(TyRef2, SubstituteMap, Memo),
+    AL = {A, {Tag, S1}},
+    Discard = ?MAN == A andalso (ty_rec:is_empty(S2) orelse not ty_rec:is_finite(S1)),
+    case Discard of
+      true ->
+        Acc;
+      false -> Acc#{AL => S2}
+    end
+                    end, #{}, Labels),
+
+  NewSt = maps:map(fun(_, TyRef) -> ty_rec:substitute(TyRef, SubstituteMap, Memo) end, Steps),
+
+  case maps:size(NewLs) < maps:size(Labels) of
+    true -> ty_rec:empty();
+    false ->
+      Map = map(NewLs, NewSt),
+      DnfMap = map(Map),
+      union(
+        intersect(DnfMap, substitute(Left, SubstituteMap, Memo)),
+        intersect(negate(DnfMap), substitute(Right, SubstituteMap, Memo))
+      )
+  end.
+
 
 all_variables(0) -> [];
 all_variables({terminal, _}) -> [];

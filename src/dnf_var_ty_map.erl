@@ -1,15 +1,16 @@
 -module(dnf_var_ty_map).
--vsn({2,2,0}).
+-vsn({2,2,1}).
 
 -define(P, {dnf_ty_map, ty_variable}).
 
 -behavior(eq).
--export([equal/2, compare/2, is_any/1, eval/1, is_empty/1]).
+-export([equal/2, compare/2]).
 
 -behavior(type).
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
+-export([eval/1, is_empty/1, is_any/1, normalize/3, substitute/3]).
 
--export([var/1, map/1, normalize/3, all_variables/1]).
+-export([var/1, map/1, all_variables/1]).
 
 -type dnf_map() :: term().
 -type ty_map() :: dnf_map(). % ty_map:type()
@@ -67,6 +68,29 @@ normalize({node, Variable, PositiveEdge, NegativeEdge}, PVar, NVar, Fixed, M) ->
     normalize(PositiveEdge, [Variable | PVar], NVar, Fixed, M),
     normalize(NegativeEdge, PVar, [Variable | NVar], Fixed, M)
   ).
+
+substitute(T, M, Memo) -> substitute(T, M, Memo, [], []).
+
+substitute(0, _, _, _, _) -> 0;
+substitute({terminal, Map}, SubstituteMap, Memo, Pos, Neg) ->
+  AllPos = lists:map(
+    fun(Var) ->
+      Substitution = maps:get(Var, SubstituteMap, ty_rec:variable(Var)),
+      ty_rec:pi(map, Substitution)
+    end, Pos),
+  AllNeg = lists:map(
+    fun(Var) ->
+      Substitution = maps:get(Var, SubstituteMap, ty_rec:variable(Var)),
+      NewNeg = ty_rec:negate(Substitution),
+      ty_rec:pi(map, NewNeg)
+    end, Neg),
+
+  lists:foldl(fun intersect/2, map(dnf_ty_map:substitute(Map, SubstituteMap, Memo)), AllPos ++ AllNeg);
+
+substitute({node, Variable, PositiveEdge, NegativeEdge}, Map, Memo, P, N) ->
+  LBdd = substitute(PositiveEdge, Map, Memo, [Variable | P], N),
+  RBdd = substitute(NegativeEdge, Map, Memo, P, [Variable | N]),
+  union(LBdd, RBdd).
 
 
 all_variables(0) -> [];

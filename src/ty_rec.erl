@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({2,0,4}).
+-vsn({2,0,5}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -7,17 +7,17 @@
 -export([is_empty/1, eval/1]).
 
 % additional type constructors
--export([function/1, variable/1, atom/1, interval/1, tuple/1, map/1]).
+-export([function/1, variable/1, atom/1, interval/1, tuple/1, map/1, relmap/1]).
 % type constructors with type refs
 -export([function/2, tuple/2, map/2]).
 % top type constructors
--export([function/0, atom/0, interval/0, tuple/0, map/0]).
+-export([function/0, atom/0, interval/0, tuple/0, map/0, relmap/0]).
 
 -export([is_equivalent/2, is_subtype/2, normalize/3]).
 
 -export([substitute/2, substitute/3, pi/2, pi_all/1, all_variables/1]).
 
--record(ty, {atom, interval, tuple, function, map}).
+-record(ty, {atom, interval, tuple, function, map, relmap}).
 
 -type ty_ref() :: {ty_ref, integer()}.
 -type interval() :: term().
@@ -51,7 +51,8 @@ empty() ->
     interval = dnf_var_int:empty(),
     tuple = dnf_var_ty_tuple:empty(),
     function = dnf_var_ty_function:empty(),
-    map = dnf_var_ty_map:empty()
+    map = dnf_var_ty_map:empty(),
+    relmap = dnf_var_relation_map:empty()
     }).
 
 -spec any() -> ty_ref().
@@ -67,7 +68,8 @@ variable(Var) ->
     interval = dnf_var_int:intersect(Any#ty.interval, dnf_var_int:var(Var)),
     tuple = dnf_var_ty_tuple:intersect(Any#ty.tuple, dnf_var_ty_tuple:var(Var)),
     function = dnf_var_ty_function:intersect(Any#ty.function, dnf_var_ty_function:var(Var)),
-    map = dnf_var_ty_map:intersect(Any#ty.map, dnf_var_ty_map:var(Var))
+    map = dnf_var_ty_map:intersect(Any#ty.map, dnf_var_ty_map:var(Var)),
+    relmap = dnf_var_relation_map:intersect(Any#ty.relmap, dnf_var_relation_map:var(Var))
   }).
 
 -spec atom(ty_atom()) -> ty_ref().
@@ -129,31 +131,41 @@ map(Map) ->
 -spec map() -> ty_ref().
 map() -> map(dnf_var_ty_map:any()).
 
+-spec relmap(_) -> ty_ref().
+relmap(Map) ->
+  Empty = ty_ref:load(empty()),
+  ty_ref:store(Empty#ty{ relmap = Map }).
+
+-spec relmap() -> ty_ref().
+relmap() -> relmap(dnf_var_relation_map:any()).
+
 % ======
 % Boolean operations
 % ======
 
 -spec intersect(ty_ref(), ty_ref()) -> ty_ref().
 intersect(TyRef1, TyRef2) ->
-  #ty{atom = A1, interval = I1, tuple = P1, function = F1, map = M1} = ty_ref:load(TyRef1),
-  #ty{atom = A2, interval = I2, tuple = P2, function = F2, map = M2} = ty_ref:load(TyRef2),
+  #ty{atom = A1, interval = I1, tuple = P1, function = F1, map = M1, relmap = R1} = ty_ref:load(TyRef1),
+  #ty{atom = A2, interval = I2, tuple = P2, function = F2, map = M2, relmap = R2} = ty_ref:load(TyRef2),
   ty_ref:store(#ty{
     atom = dnf_var_ty_atom:intersect(A1, A2),
     interval = dnf_var_int:intersect(I1, I2),
     tuple = dnf_var_ty_tuple:intersect(P1, P2),
     function = dnf_var_ty_function:intersect(F1, F2),
-    map = dnf_var_ty_map:intersect(M1, M2)
+    map = dnf_var_ty_map:intersect(M1, M2),
+    relmap = dnf_var_relation_map:intersect(R1, R2)
   }).
 
 -spec negate(ty_ref()) -> ty_ref().
 negate(TyRef1) ->
-  #ty{atom = A1, interval = I1, tuple = P1, function = F1, map = M1} = ty_ref:load(TyRef1),
+  #ty{atom = A1, interval = I1, tuple = P1, function = F1, map = M1, relmap = R1} = ty_ref:load(TyRef1),
   ty_ref:store(#ty{
     atom = dnf_var_ty_atom:negate(A1),
     interval = dnf_var_int:negate(I1),
     tuple = dnf_var_ty_tuple:negate(P1),
     function = dnf_var_ty_function:negate(F1),
-    map = dnf_var_ty_map:negate(M1)
+    map = dnf_var_ty_map:negate(M1),
+    relmap = dnf_var_relation_map:negate(R1)
   }).
 
 -spec diff(ty_ref(), ty_ref()) -> ty_ref().
@@ -185,6 +197,7 @@ is_empty_miss(TyRef) ->
             dnf_var_ty_tuple:is_empty(Ty#ty.tuple)
               andalso dnf_var_ty_function:is_empty(Ty#ty.function)
               andalso dnf_var_ty_map:is_empty(Ty#ty.map)
+              andalso dnf_var_relation_map:is_empty(Ty#ty.relmap)
         end
       end
   ).
@@ -220,7 +233,13 @@ normalize(TyRef, Fixed, M) ->
                       [] -> [];
                       _ ->
                         MapNormalize = dnf_var_ty_map:normalize(Ty#ty.map, Fixed, M),
-                        constraint_set:merge_and_meet(Res5, MapNormalize)
+                        Res6 = constraint_set:merge_and_meet(Res5, MapNormalize),
+                        case Res6 of
+                          [] -> [];
+                          _ ->
+                            RelMapNorm = dnf_var_relation_map:normalize(Ty#ty.relmap, Fixed, M),
+                            constraint_set:merge_and_meet(Res6, RelMapNorm)
+                        end
                     end
                 end
           end
@@ -237,7 +256,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
         atom = Atoms,
         interval = Ints,
         tuple = Tuples,
-        function = Functions
+        function = Functions,
+        map = Maps
       } = ty_ref:load(TyRef),
 
       case has_ref(Ty, TyRef) of
@@ -249,7 +269,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
             interval = dnf_var_int:substitute(Ints, SubstituteMap),
             tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, Memo),
             function = dnf_var_ty_function:substitute(Functions, SubstituteMap, Memo),
-            map = dnf_var_ty_map:empty() % TODO substitute
+            map = dnf_var_ty_map:substitute(Maps, SubstituteMap, Memo),
+            relmap = dnf_var_relation_map:empty()
           },
           ty_ref:define_ty_ref(RecursiveNewRef, NewTy);
         false ->
@@ -258,7 +279,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
             interval = dnf_var_int:substitute(Ints, SubstituteMap),
             tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, OldMemo),
             function = dnf_var_ty_function:substitute(Functions, SubstituteMap, OldMemo),
-            map = dnf_var_ty_map:empty() % TODO substitute
+            map = dnf_var_ty_map:substitute(Maps, SubstituteMap, OldMemo),
+            relmap = dnf_var_relation_map:empty()
           },
           ty_ref:store(NewTy)
       end;

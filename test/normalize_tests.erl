@@ -166,14 +166,19 @@ simple_normalize1_map_test() ->
   ]),
   M2 = struct([{v(alpha), opt(v(beta))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), r(), KeyDomain}, {v(beta), r(), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => r(),  v(beta) => r()},
+    #{v(alpha) => KeyDomain,  v(beta) => any()}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 simple_normalize2_map_test() ->
@@ -185,14 +190,20 @@ simple_normalize2_map_test() ->
   ]),
   M2 = struct([{v(alpha), opt(v(beta))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), u(r(), b()), KeyDomain}, {v(beta), u(r(), b()), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => u(r(), b()),  v(beta) => u(r(), b())},
+    #{v(alpha) => KeyDomain,  v(beta) => u(r(), b())},
+    #{v(alpha) => KeyDomain,  v(beta) => KeyDomain}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 simple_normalize3_map_test() ->
@@ -200,14 +211,18 @@ simple_normalize3_map_test() ->
   M1 = dict(stp(i), r()),
   M2 = struct([{v(alpha), opt(v(beta))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), KeyDomain, KeyDomain}, {v(beta), any(), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => KeyDomain,  v(beta) => any()}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 simple_normalize4_map_test() ->
@@ -220,14 +235,18 @@ simple_normalize4_map_test() ->
   M2 = struct([{v(alpha), opt(v(beta))}], false),
 
   KeyDomain = u([b(), r(), t()]),
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
-  KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), KeyDomain, KeyDomain}, {v(beta), u(r(), b(foo)), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => KeyDomain,  v(beta) => u(r(), b(foo))},
+    #{v(alpha) => KeyDomain,  v(beta) => any()}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 simple_normalize5_map_test() ->
@@ -235,26 +254,31 @@ simple_normalize5_map_test() ->
   M1 = struct([{b(input), r()}], false),
   M2 = struct([{v(alpha), opt(v(beta))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), b(input), KeyDomain}, {v(beta), r(), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => b(input),  v(beta) => r()},
+    #{v(alpha) => b(input),  v(beta) => any()}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 simple_normalize6_map_test() ->
-  % #{input := int(), _ => any()}  ≤  #{a := β, _ => any()} or #{zeta := theta, _ => any()}
+  % #{input := int(), _ => any()}  ≤  #{a := β, _ => any()} or #{γ := δ, _ => any()}
   M1 = struct([{b(input), r()}], true),
   M2 = struct([{v(alpha), v(beta)}], true),
-  M3 = struct([{v(zeta), v(theta)}], true),
+  M3 = struct([{v(gamma), v(delta)}], true),
 
   Res = normalize(M1, u(M2, M3), sets:new()),
   _Expected = norm_css([
     [{v(alpha), b(input), b(input)}, {v(beta), r(), any()}],
-    [{v(zeta), b(input), b(input)}, {v(theta), r(), any()}]
+    [{v(gamma), b(input), b(input)}, {v(delta), r(), any()}]
     % and something
   ]),
 
@@ -268,10 +292,10 @@ simple_normalize7_map_test() ->
     {b(input), b(bool)},
     {v(alpha), opt(v(beta))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
   Expected = [],
 
-  true = Expected == Res,
+  true = Expected == Result,
 
   ok.
 simple_normalize8_map_test() ->
@@ -281,10 +305,10 @@ simple_normalize8_map_test() ->
     {b(input), r(1)},
     {v(alpha), opt(v(beta))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
   Expected = [],
 
-  true = Expected == Res,
+  true = Expected == Result,
 
   ok.
 simple_normalize9_map_test() ->
@@ -292,31 +316,33 @@ simple_normalize9_map_test() ->
   M1 = struct([{b(input), r()}], false),
   M2 = struct([{b(input), r(1)}], true),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
   Expected = [],
 
-  true = Expected == Res,
+  true = Expected == Result,
 
   ok.
 simple_normalize10_map_test() ->
-  % #{in := 1, out := 2}  ≤  #{a := 1, β := theta}
-  % TODO show variations
+  % #{in := 1, out := 2}  ≤  #{a := 1, β := γ}
   M1 = struct([{b(in), r(1)}, {b(out), r(2)}], false),
-  M2 = struct([{v(alpha), r(1)}, {v(beta), v(theta)}], false),
+  M2 = struct([{v(alpha), r(1)}, {v(beta), v(gamma)}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   U = u(b(in), b(out)),
   Expected = norm_css([
-    [{v(alpha), U, U}, {v(beta), U, U}, {v(theta), r(2), any()}]
+    [{v(alpha), U, U}, {v(beta), U, U}, {v(gamma), r(2), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => U,  v(beta) => U, v(gamma) => r(2)}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 norm_map1_test() ->
   % #{a => int()}  ≤  #{int() => β}
-  % TODO ask, show variations
   M1 = struct([{v(alpha), opt(r())}], false),  %%  M2 = struct([{v(theta), opt(v(beta))}], false),
   M2 = i([
     dict(stp(i), v(beta)),
@@ -324,12 +350,17 @@ norm_map1_test() ->
     dict(stp(t), none())
   ]),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
   Expected = norm_css([
     [{v(alpha), none(), r()}, {v(beta), r(), any()}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => none(),  v(beta) => r()},
+    #{v(alpha) => r(),  v(beta) => r()}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 %%normalize_map_values_test() ->
@@ -356,23 +387,27 @@ norm_map1_test() ->
 %%
 %%  ok.
 norm_map2_test() ->
-  % #{a := β, _ => any()}  ≤  #{zeta := theta, _ => any()}
+  % #{a := β, _ => any()}  ≤  #{γ := δ, _ => any()}
   M1 = struct([{v(alpha), v(beta)}], true),
-  M2 = struct([{v(zeta), v(theta)}], true),
+  M2 = struct([{v(gamma), v(delta)}], true),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   Expected = norm_css([
-    [{v(alpha), v(zeta), v(zeta)}, {v(beta), none(), v(theta)}]
+    [{v(alpha), v(gamma), v(gamma)}, {v(beta), none(), v(delta)}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => any(),  v(beta) => any()}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 norm_map3_test() ->
-  % #{}  ≤  #{zeta := theta}
+  % #{}  ≤  #{a := b}
   M1 = struct([], false),
-  M2 = struct([{v(zeta), v(theta)}], false),
+  M2 = struct([{v(alpha), v(beta)}], false),
 
   Res = normalize(i(M1, M2), M1, sets:new()),
   Expected = [[]],
@@ -385,14 +420,18 @@ norm_map4_test() ->
   M1 = struct([{v(alpha), opt(any())}], false),
   M2 = struct([], true),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), none(), KeyDomain}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => KeyDomain}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 norm_map5_test() ->
@@ -400,14 +439,18 @@ norm_map5_test() ->
   M1 = struct([{v(alpha), r(2)}], false),
   M2 = struct([{v(beta), opt(r(2))}], false),
 
-  Res = normalize(M1, M2, sets:new()),
+  Result = normalize(M1, M2, sets:new()),
 
   KeyDomain = u([b(), r(), t()]),
   Expected = norm_css([
     [{v(alpha), none(), v(beta)}, {v(beta), none(), KeyDomain}]
   ]),
 
-  true = Expected == Res,
+  TestSubstitutions = norm_substs([
+    #{v(alpha) => v(beta),  v(beta) => KeyDomain}
+  ]),
+
+  true = set_of_constraint_sets:is_equivalent(Expected, Result, TestSubstitutions),
 
   ok.
 norm_map6_test() ->
@@ -424,11 +467,11 @@ norm_map6_test() ->
     [{v(alpha), none(), v(beta)}, {v(beta), KeyDomain, KeyDomain}]
   ]),
 
-  true = Expected == Res,
+  true = Res == Expected,
 
   ok.
 norm_map7_test() ->
-  % #{input => 1}  ≤  #{input := 1}
+  % #{input => 1}  !≤  #{input := 1}
   M1 = struct(
     [{b(input), opt(r(1))}], false),
   M2 = struct(

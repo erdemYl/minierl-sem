@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, struct/2, dict/2, opt/1, stp/1]).
+-import(test_ast, [mu/2, n/1, b/1, b/0, f/2, t/2, t/0, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, struct/2, dict/2, opt/1, stp/1, relmap/2]).
 
 simple_test_() ->
   Data = lists:map(
@@ -246,6 +246,12 @@ uneven_even_lists_not_comparable_test() ->
 % ====
 
 map_any_empty_test() ->
+  AnyRelMap = relmap([t(any(), any())], []),
+  EmptyRelMap = relmap([], [n(f(none(), any()))]),
+  true = subty(EmptyRelMap, AnyRelMap),
+  false = subty(AnyRelMap, EmptyRelMap),
+  false = subty(EmptyRelMap, none()),
+
   % struct
   EmptyS = struct([], false), % type that only contains empty struct
   AnyS = struct([], true),
@@ -399,6 +405,83 @@ map_last_test() ->
   true = subty(M1, M2),
   false = subty(M2, M1)
 .
+
+% ====
+% RelMap test
+% ====
+
+relmap_any_empty_test() ->
+  AnyMap = relmap([t(any(), any())], []),
+  EmptyMap = relmap([t(any(), none())], [f(any(), none())]),
+  true = subty(EmptyMap, AnyMap),
+  false = subty(AnyMap, EmptyMap),
+  false = subty(EmptyMap, none())
+.
+
+relmap_opt_simple_test() ->
+  % #{int() => int()}  ≤  #{1 => atom(), int() => int()}
+  AnyMap = relmap([t(any(), any())], []),
+  Map1 = relmap([t(r(), r())], []),
+  Map2 = relmap([t(r(1), b()), t(r(), r())], []),
+  true = subty(Map1, Map2),
+  false = subty(Map2, Map1),
+  true = subty(Map2, AnyMap)
+.
+
+relmap_man_simple_test() ->
+  % #{in := int(), out := atom(), 1|2 := any()}
+  % ≤
+  % #{in|out := int()|atom(), 1|2 := any()}
+  Map1 = relmap(
+    [
+      t(b(in), r()),
+      t(b(out), b()),
+      t(u(r(1), r(2)), any())
+    ],
+    [
+      f(b(in), r()),
+      f(b(out), b()),
+      f(u(r(1), r(2)), any())
+    ]
+  ),
+  Map2 = relmap(
+    [
+      t(u(b(in), b(out)), u(r(), b())),
+      t(u(r(1), r(2)), any())
+    ],
+    [
+      f(u(b(in), b(out)), u(r(), b())),
+      f(u(r(1), r(2)), any())
+    ]
+  ),
+  true = subty(Map1, Map2)
+.
+
+relmap_opt_complex_test() ->
+  % #{ int x int => int()}  ≤  #{tuple() => int()}
+  Map1 = relmap(
+    [t(t(r(), r()), r())],
+    []
+  ),
+  Map2 = relmap(
+    [t(t(), r())],
+    []
+  ),
+  true = subty(Map1, Map2)
+.
+
+relmap_man_complex_test() ->
+  % #{1 := atom()}  !≤  #{int() => int()}
+  Map1 = relmap(
+    [t(r(1), b())],
+    [f(r(1), b())]
+  ),
+  Map2 = relmap(
+    [t(r(), r())],
+    []
+  ),
+  false = subty(Map1, Map2).
+
 
 % #{alpha => int(), _ => any()}  ≤  #{beta => any()}
 %%map_with_vars1_test() ->
