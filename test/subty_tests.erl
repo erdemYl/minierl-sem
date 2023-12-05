@@ -246,12 +246,6 @@ uneven_even_lists_not_comparable_test() ->
 % ====
 
 map_any_empty_test() ->
-  AnyRelMap = relmap([t(any(), any())], []),
-  EmptyRelMap = relmap([], [n(f(none(), any()))]),
-  true = subty(EmptyRelMap, AnyRelMap),
-  false = subty(AnyRelMap, EmptyRelMap),
-  false = subty(EmptyRelMap, none()),
-
   % struct
   EmptyS = struct([], false), % type that only contains empty struct
   AnyS = struct([], true),
@@ -412,76 +406,126 @@ map_last_test() ->
 
 relmap_any_empty_test() ->
   AnyMap = relmap([t(any(), any())], []),
-  EmptyMap = relmap([t(any(), none())], [f(any(), none())]),
+  EmptyMap = relmap([], []),
+  Int = i(EmptyMap, AnyMap),
   true = subty(EmptyMap, AnyMap),
   false = subty(AnyMap, EmptyMap),
-  false = subty(EmptyMap, none())
+  false = subty(EmptyMap, none()),
+  true = subty(Int, EmptyMap),
+  true = subty(EmptyMap, Int),
+  % #{a := 1}  !≤ ≥!  #{}
+  M1 = relmap([], [f(b(a), r(1))]),
+  false = subty(M1, EmptyMap),
+  false = subty(EmptyMap, M1),
+  % #{a => 1}  !≤≥  #{}
+  M2 = relmap([t(b(a), r(1))], []),
+  false = subty(M2, EmptyMap),
+  true = subty(EmptyMap, M2)
+.
+
+relmap_small_test() ->
+  % #{} /\ #{foo := int()}  ≤  0
+  M1 = relmap([], [f(b(foo), r())]),
+  Empty = relmap([], []),
+  true = subty(i(Empty, M1), none())
 .
 
 relmap_opt_simple_test() ->
   % #{int() => int()}  ≤  #{1 => atom(), int() => int()}
   AnyMap = relmap([t(any(), any())], []),
-  Map1 = relmap([t(r(), r())], []),
-  Map2 = relmap([t(r(1), b()), t(r(), r())], []),
-  true = subty(Map1, Map2),
-  false = subty(Map2, Map1),
-  true = subty(Map2, AnyMap)
+  M1 = relmap([t(r(), r())], []),
+  M2 = relmap([t(r(1), b()), t(r(), r())], []),
+  true = subty(M1, M2),
+  false = subty(M2, M1),
+  true = subty(M2, AnyMap)
 .
 
 relmap_man_simple_test() ->
   % #{in := int(), out := atom(), 1|2 := any()}
   % ≤
   % #{in|out := int()|atom(), 1|2 := any()}
-  Map1 = relmap(
-    [
-      t(b(in), r()),
-      t(b(out), b()),
-      t(u(r(1), r(2)), any())
-    ],
+  M1 = relmap(
+    [],
     [
       f(b(in), r()),
       f(b(out), b()),
       f(u(r(1), r(2)), any())
     ]
   ),
-  Map2 = relmap(
-    [
-      t(u(b(in), b(out)), u(r(), b())),
-      t(u(r(1), r(2)), any())
-    ],
+  M2 = relmap(
+    [],
     [
       f(u(b(in), b(out)), u(r(), b())),
       f(u(r(1), r(2)), any())
     ]
   ),
-  true = subty(Map1, Map2)
+  true = subty(M1, M2)
 .
 
 relmap_opt_complex_test() ->
-  % #{ int x int => int()}  ≤  #{tuple() => int()}
-  Map1 = relmap(
+  % #{int x int => int()}  ≤  #{int x any => int()}
+  M1 = relmap(
     [t(t(r(), r()), r())],
     []
   ),
-  Map2 = relmap(
-    [t(t(), r())],
+  M2 = relmap(
+    [t(t(r(), any()), r())],
     []
   ),
-  true = subty(Map1, Map2)
+  true = subty(M1, M2)
 .
 
-relmap_man_complex_test() ->
+relmap_man1_complex_test() ->
   % #{1 := atom()}  !≤  #{int() => int()}
-  Map1 = relmap(
+  M1 = relmap(
     [t(r(1), b())],
     [f(r(1), b())]
   ),
-  Map2 = relmap(
+  M2 = relmap(
     [t(r(), r())],
     []
   ),
-  false = subty(Map1, Map2).
+  false = subty(M1, M2)
+.
 
+relmap_man2_complex_test() ->
+  % M1 = {1 := a, 2 := b}  ≤≥!  {1 => a, 2 := b} = M2
+  M1 = relmap(
+    [],
+    [f(r(1), b(a)), f(r(2), b(b))]
+  ),
+  M2 = relmap(
+    [t(r(1), b(a))],
+    [f(r(2), b(b))]
+  ),
+  true = subty(M1, M2),
+  false = subty(M2, M1)
+.
+
+relmap_man3_complex_test() ->
+  % M1 = {1 := a, 2 => b, 10 => c}  !≤≥!  {1 => a, 2 := b, 3 => c} = M2
+  M1 = relmap(
+    [t(r(2), b(b)), t(r(10), b(c))],
+    [f(r(1), b(a))]
+  ),
+  M2 = relmap(
+    [t(r(1), b(a)), t(r(3), b(c))],
+    [f(r(2), b(b))]
+  ),
+  false = subty(M1, M2),
+  false = subty(M2, M1).
+
+relmap_man4_complex_test() ->
+  % #{i := vi}  !≤  #{vi := i}
+  Ks = [1,2,3,4,5,6,7,8,9,10],
+  Vs = [v1,v2,v3,v4,v5,v6,v7,v8,v9,v10],
+  Fs1 = [f(r(K), b(V)) || {K, V} <- lists:zip(Ks, Vs)],
+  Fs2 = [f(b(K), r(V)) || {K, V} <- lists:zip(Vs, Ks)],
+
+  M1 = relmap([], Fs1),
+  M2 = relmap([], Fs2),
+  false = subty(M1, M2),
+  ok.
 
 % #{alpha => int(), _ => any()}  ≤  #{beta => any()}
 %%map_with_vars1_test() ->

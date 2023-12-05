@@ -1,7 +1,7 @@
 -module(normalize_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [norm_substs/1, norm/1, mu/2, n/1, b/0, b/1, f/2, t/0, t/2, i/2, i/1, u/2, u/1, r/1, r/0, struct/2, dict/2, opt/1, stp/1, none/0, any/0, v/1, subty/2, normalize/3, normalize/2, var_of/1, norm_css/1]).
+-import(test_ast, [norm_substs/1, norm/1, mu/2, n/1, b/0, b/1, f/2, t/0, t/2, i/2, i/1, u/2, u/1, r/1, r/0, struct/2, dict/2, opt/1, stp/1, relmap/2, rest/1, none/0, any/0, v/1, subty/2, normalize/3, normalize/2, var_of/1, norm_css/1]).
 
 simple_empty_test() ->
   [[]] = normalize(v(alpha), any(), sets:new()),
@@ -270,7 +270,7 @@ simple_normalize5_map_test() ->
 
   ok.
 simple_normalize6_map_test() ->
-  % #{input := int(), _ => any()}  ≤  #{a := β, _ => any()} or #{γ := δ, _ => any()}
+  % #{input := int(), _ => any()}  ≤  #{a := β, _ => any()} | #{γ := δ, _ => any()}
   M1 = struct([{b(input), r()}], true),
   M2 = struct([{v(alpha), v(beta)}], true),
   M3 = struct([{v(gamma), v(delta)}], true),
@@ -286,7 +286,7 @@ simple_normalize6_map_test() ->
 
   ok.
 simple_normalize7_map_test() ->
-  % #{input := int(), _ => any()}  ≤  #{input := bool, a => β}
+  % #{input := int(), _ => any()}  !≤  #{input := bool, a => β}
   M1 = struct([{b(input), r()}], true),
   M2 = struct([
     {b(input), b(bool)},
@@ -299,7 +299,7 @@ simple_normalize7_map_test() ->
 
   ok.
 simple_normalize8_map_test() ->
-  % #{input := int(), _ => any()}  ≤  #{input := 1, a => β}
+  % #{input := int(), _ => any()}  !≤  #{input := 1, a => β}
   M1 = struct([{b(input), r()}], true),
   M2 = struct([
     {b(input), r(1)},
@@ -312,7 +312,7 @@ simple_normalize8_map_test() ->
 
   ok.
 simple_normalize9_map_test() ->
-  % #{input := int()}  ≤  #{input := 1, _ => any()}
+  % #{input := int()}  !≤  #{input := 1, _ => any()}
   M1 = struct([{b(input), r()}], false),
   M2 = struct([{b(input), r(1)}], true),
 
@@ -405,12 +405,12 @@ norm_map2_test() ->
 
   ok.
 norm_map3_test() ->
-  % #{}  ≤  #{a := b}
+  % #{}  !≤  #{a := b}
   M1 = struct([], false),
   M2 = struct([{v(alpha), v(beta)}], false),
 
-  Res = normalize(i(M1, M2), M1, sets:new()),
-  Expected = [[]],
+  Res = normalize(M1, M2, sets:new()),
+  Expected = [],
 
   true = Expected == Res,
 
@@ -481,4 +481,150 @@ norm_map7_test() ->
 
   true = [] == Res,
 
+  ok.
+
+% =====
+% Relation Map
+% =====
+
+norm_relmap1_test() ->
+  % #{int() => int()}  ≤  #{a => β}
+  M1 = relmap([t(r(), r())], []),
+  M2 = relmap([t(v(alpha), v(beta))], []),
+  Res = normalize(M1, M2, sets:new()),
+  Expected = norm_css([
+    [{v(alpha), r(), any()}, {v(beta), r(), any()}]
+  ]),
+  true = Res == Expected,
+  ok.
+
+norm_relmap2_test() ->
+  % #{int() => int(), atom() => atom()}  ≤  #{a => β}
+  M1 = relmap([t(r(), r()), t(b(), b())], []),
+  M2 = relmap([t(v(alpha), v(beta))], []),
+  Res = normalize(M1, M2, sets:new()),
+  Expected = norm_css([
+    [{v(alpha), u(r(), b()), any()}, {v(beta), u(r(), b()), any()}]
+  ]),
+  true = Res == Expected,
+  ok.
+
+norm_relmap3_test() ->
+  % #{int() => int(), _ => foo}  ≤  #{a => β}
+  M1 = relmap([t(r(), r()), t(rest(r()), b(foo))], []),
+  M2 = relmap([t(v(alpha), v(beta))], []),
+  Res = normalize(M1, M2, sets:new()),
+  Expected = norm_css([
+    [{v(alpha), any(), any()}, {v(beta), u(r(), b(foo)), any()}]
+  ]),
+  true = Res == Expected,
+  ok.
+
+norm_relmap4_test() ->
+  % #{a => int()}  ≤  #{int() => β}
+  M1 = relmap([t(v(alpha), r())], []),
+  M2 = relmap([t(r(), v(beta))], []),
+  Res = normalize(M1, M2, sets:new()),
+  Expected = norm_css([
+    [{v(alpha), none(), none()}],
+    [{v(alpha), none(), r()}, {v(beta), r(), any()}]
+  ]),
+  true = Res == Expected,
+  ok.
+
+norm_relmap5_test() ->
+  % #{int() => β} ≤  #{a => int()}
+  M1 = relmap([t(r(), v(beta))], []),
+  M2 = relmap([t(v(alpha), r())], []),
+  Res = normalize(M1, M2, sets:new()),
+  Expected = norm_css([
+    [{v(alpha), r(), any()}, {v(beta), none(), r()}],
+    [{v(beta), none(), none()}]
+]),
+  true = Res == Expected,
+  ok.
+
+norm_relmap6_test() ->
+  % #{a => int(), _ => atom()}  ≤  #{b => atom() | int()}
+  M1 = relmap([t(v(alpha), r()), t(rest(v(alpha)),b())], []),
+  M2 = relmap([t(v(beta), u(b(), r()))], []),
+  Res = normalize(M1, M2, sets:new()),
+  Expected = norm_css([
+    [{v(alpha), n(v(beta)), v(beta)}]
+  ]),
+  true = Res == Expected,
+  ok.
+
+norm_relmap7_test() -> % interesting property or to be fixed?
+  % #{}  ≤  #{a := β} -- fix with constraint gen (no zero for mandatory): 1 !≤ a  <=  a ≤ int  orelse  a ≤ atom  orelse  a ≤ tuple
+  M1 = relmap([], []),
+  M2 = relmap([], [f(v(alpha), v(beta))]),
+  Res = normalize(M1, M2, sets:new()),
+  _Expected = norm_css([
+    [{v(alpha), none(), none()}]
+  ]),
+  true = Res,
+  ok.
+
+norm_relmap8_test() ->
+  % #{bar := int(), _ => any()}  !≤  #{foo := 1, a => β} -- constraint gen: a ≤ -RestKeys
+  M1 = relmap([t(rest(b(bar)), any())], [f(b(bar), r())]),
+  M2 = relmap([t(i(v(alpha), rest(b(foo))), v(beta))], [f(b(foo), r(1))]),
+  Res = normalize(M1, M2, sets:new()),
+  true = Res,
+  ok.
+
+norm_relmap9_test() ->
+  % #{foo := 1, bar := 2}  ≤  #{a := 1, β := γ}
+  M1 = relmap([], [f(b(foo), r(1)), f(b(bar), r(2))]),
+  M2 = relmap([], [f(v(alpha), r(1)), f(v(beta), v(gamma))]),
+  Res = normalize(M1, M2, sets:new()),
+  true = Res,
+  ok.
+
+norm_relmap10_test() ->
+  % #{a := β, _ => any()}  ≤  #{γ := δ, _ => any()}
+  M1 = relmap([t(rest(v(alpha)), any())], [f(v(alpha), v(beta))]),
+  M2 = relmap([t(rest(v(gamma)), any())], [f(v(gamma), v(delta))]),
+  Res = normalize(M1, M2, sets:new()),
+  true = Res,
+  ok.
+
+norm_relmap11_test() ->
+  % #{i := vi}  ≤  #{a := v1, β := δ} -- efficiency
+  Ks = [1,2,3],
+  Vs = [v1,v2,v3],
+  Fs = [f(r(K), b(V)) || {K, V} <- lists:zip(Ks, Vs)],
+  _M1 = relmap([], Fs),
+  _M2 = relmap([], [f(v(alpha), b(v1)), f(v(beta), v(gamma))]),
+%%  Res = normalize(M1, M2, sets:new()),
+%%  true = Res,
+  ok.
+
+norm_relmap12_test() ->
+  % #{int() => atom(), atom() => int()}  ≤  #{int() => a, atom() => β, γ => δ}
+  Rest = rest(u(r(), b())),
+  M1 = relmap([t(r(), b()), t(b(), r())], []),
+  M2 = relmap([t(r(), v(alpha)), t(b(), v(beta)), t(i(v(gamma), Rest), v(delta))], []),
+  Res = normalize(M1, M2, sets:new()),
+  true = Res,
+  ok.
+
+norm_relmap13_test() ->
+  % #{foo := int(), _ => any()}  ≤  #{a := β, _ => any()} | #{γ := δ, _ => any()}
+  M1 = relmap([t(rest(b(foo)), any())], [f(b(foo), r())]),
+  M2 = u(
+    relmap([t(rest(v(alpha)), any())], [f(v(alpha), v(beta))]),
+    relmap([t(rest(v(gamma)), any())], [f(v(gamma), v(delta))])
+  ),
+  Res = normalize(M1, M2, sets:new()),
+  true = Res,
+  ok.
+
+norm_relmap14_test() ->
+  % #{input => 1}  !≤  #{input := 1}
+  M1 = relmap([t(b(input), r(1))], []),
+  M2 = relmap([], [f(b(input), r(1))]),
+  Res = normalize(M1, M2, sets:new()),
+  true = Res,
   ok.

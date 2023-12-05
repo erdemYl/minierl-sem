@@ -43,7 +43,7 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 -type ty_map_dict_key()   :: integer_key | atom_key | tuple_key.
 
 % relmap
--type relation_map() :: {map, [ty_tuple()], [ty_fun()]}.
+-type relation_map() :: {map, [ty_tuple()], [ty_tuple()]}.
 
 
 -type ty_union()        :: {union, ty(), ty()}.
@@ -148,6 +148,7 @@ any_step() -> #{stp(i) => any(), stp(a) => any(), stp(t) => any()}.
 
 % relation map constructor
 relmap(Ts, Fs) -> {map, Ts, Fs}.
+rest(Ty) -> n(Ty).
 
 % ==================
 % ast:ty() -> ty_rec:ty_ref()
@@ -225,14 +226,25 @@ norm({'fun', A, B}) ->
   T = dnf_var_ty_function:function(dnf_ty_function:function(ty_function:function(TyA, TyB))),
   ty_rec:function(T);
 norm({map, Ts, Fs}) ->
-  Tuples = [dnf_ty_tuple:tuple(ty_tuple:tuple(norm(A), norm(B))) || {tuple, A, B} <- Ts],
-  DnfTuple = lists:foldr(fun dnf_ty_tuple:union/2, dnf_ty_tuple:empty(), Tuples),
+  TuplesOpt = [dnf_ty_tuple:tuple(ty_tuple:tuple(norm(A), norm(B))) || {tuple, A, B} <- Ts],
+  TuplesMan = [dnf_ty_tuple:tuple(ty_tuple:tuple(norm(A), norm(B))) || {'fun', A, B} <- Fs],
+  DnfTuple = lists:foldr(fun dnf_ty_tuple:union/2, dnf_ty_tuple:empty(), TuplesOpt ++ TuplesMan),
 
   Functions = [dnf_ty_function:function(ty_function:function(norm(A), norm(B))) || {'fun', A, B} <- Fs],
   DnfFun = lists:foldr(fun dnf_ty_function:intersect/2, dnf_ty_function:any(), Functions),
 
   T = dnf_var_relation_map:map(dnf_relation_map:map(relation_map:map(DnfTuple, DnfFun))),
   ty_rec:relmap(T);
+%%norm({map, Ts1, Ts2}) -> % relation x relation
+%%  TuplesOpt = [dnf_ty_tuple:tuple(ty_tuple:tuple(norm(A), norm(B))) || {tuple, A, B} <- Ts1],
+%%  TuplesMan1 = [dnf_ty_tuple:tuple(ty_tuple:tuple(norm(A), norm(B))) || {tuple, A, B} <- Ts2],
+%%  DnfTuple1 = lists:foldr(fun dnf_ty_tuple:union/2, dnf_ty_tuple:empty(), TuplesOpt ++ TuplesMan1),
+%%
+%%  TuplesMan2 = [dnf_ty_tuple:tuple(ty_tuple:tuple(norm(A), ty_rec:negate(norm(B)))) || {tuple, A, B} <- Ts2],
+%%  DnfTuple2 = dnf_ty_tuple:negate(lists:foldr(fun dnf_ty_tuple:union/2, dnf_ty_tuple:empty(), TuplesMan2)),
+%%
+%%  T = dnf_var_relation_map:map(dnf_relation_map:map(relation_map:map(DnfTuple1, DnfTuple2))),
+%%  ty_rec:relmap(T);
 norm({map_struct, Fields, IsOpen}) ->
   StMappings = norm_(case IsOpen of true -> any_step(); _ -> empty_step() end),
   LbMappings = #{

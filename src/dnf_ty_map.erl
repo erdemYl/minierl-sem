@@ -137,17 +137,19 @@ normalize(DnfTyMap, PVar, NVar, Fixed, M) ->
   ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:map(dnf_var_ty_map:var(Var)) end, M).
 
 normalize_no_vars(TyMap, P, N, Fixed, M) ->
-  traverse_dnf(TyMap, P, N, phi_norm(Fixed, M)).
+  KeyC = constrain_key_vars(P, Fixed, M),
+  constraint_set:merge_and_meet(
+    KeyC(),
+    traverse_dnf(TyMap, P, N, phi_norm(Fixed, M))).
 
 phi_norm(Fixed, M) -> fun
     Norm(P = {_, Labels, Steps}, []) ->
       case P == ty_map:b_empty() of
         true -> [[]]; % satisfied
         false ->
-          KeyC = constrain_key_vars(P, Fixed, M),
           C1 = [?F(ty_rec:normalize(TyRef, Fixed, M)) || _ := TyRef <- Steps],
           C2 = [?F(ty_rec:normalize(TyRef2, Fixed, M)) || _ := TyRef2 <- Labels],
-          (lazy_meet([KeyC | C1 ++ C2]))()
+          (lazy_meet(C1 ++ C2))()
       end;
     Norm(P = {_, Labels, Steps}, [N | Ns]) -> {_, NegLabels, NegSteps} = N,
       KeyC1 = constrain_key_vars(N, Fixed, M),
@@ -168,7 +170,11 @@ phi_norm(Fixed, M) -> fun
         || AL = {A, _} := TyRef <- LsDiff
       ],
       Constraints = lazy_meet([KeyC1, KeyC2 | StepConstraints ++ LabelConstraints]),
-      constraint_set:join(Constraints, ?F(Norm(P, Ns)))
+
+      case Ns of
+        [] -> Constraints();
+        _ -> constraint_set:join(Constraints, ?F(Norm(P, Ns)))
+      end
                       end.
 
 var_steps_diff(Labels, Steps, NegLabels, NegSteps) ->
@@ -214,7 +220,7 @@ constrain_key_vars(TyMap1, TyMap2, Fixed, M) ->
        mandatory ->
          case [TyRef || {AA, {_, TyRef}} := _ <- Labels2, mandatory == AA] of
            [] when Flag == 1 -> ?F([[]]); % case: no mandatory keys in neg map
-           [] when Flag == 2 -> ?F([]); % case: no mandatory keys in pos map
+%%           [] when Flag == 2 -> ?F([]); % case: no mandatory keys in pos map
            X ->
              LabelKeys = u(X),
              Lower = ty_rec:diff(LabelKeys, TyVar),
