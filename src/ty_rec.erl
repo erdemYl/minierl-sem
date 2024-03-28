@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({2,0,4}).
+-vsn({2,1,0}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -9,13 +9,13 @@
 % additional type constructors
 -export([function/1, variable/1, atom/1, interval/1, tuple/1, map/1]).
 % type constructors with type refs
--export([function/2, tuple/2, map/2]).
+-export([function/2, tuple/2]).
 % top type constructors
 -export([function/0, atom/0, interval/0, tuple/0, map/0]).
 
 -export([is_equivalent/2, is_subtype/2, normalize/3]).
 
--export([substitute/2, substitute/3, pi/2, pi_all/1, all_variables/1]).
+-export([substitute/2, substitute/3, pi/2, all_variables/1, to_labels/1]).
 
 -record(ty, {atom, interval, tuple, function, map}).
 
@@ -23,9 +23,9 @@
 -type interval() :: term().
 -type ty_tuple() :: term().
 -type ty_function() :: term().
--type ty_map() :: term().
 -type ty_variable() :: term().
 -type ty_atom() :: term().
+-type ty_map() :: term().
 
 
 % ======
@@ -52,7 +52,7 @@ empty() ->
     tuple = dnf_var_ty_tuple:empty(),
     function = dnf_var_ty_function:empty(),
     map = dnf_var_ty_map:empty()
-    }).
+  }).
 
 -spec any() -> ty_ref().
 any() ->
@@ -114,12 +114,6 @@ function(Fun) ->
 -spec function() -> ty_ref().
 function() ->
   function(dnf_var_ty_function:any()).
-
--spec map(b_map:labels(), b_map:steps()) -> ty_ref().
-map(Labels, Steps) ->
-  Empty = ty_ref:load(empty()),
-  Map = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(Labels, Steps))),
-  ty_ref:store(Empty#ty{ map = Map }).
 
 -spec map(ty_map()) -> ty_ref().
 map(Map) ->
@@ -237,7 +231,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
         atom = Atoms,
         interval = Ints,
         tuple = Tuples,
-        function = Functions
+        function = Functions,
+        map = Maps
       } = ty_ref:load(TyRef),
 
       case has_ref(Ty, TyRef) of
@@ -249,7 +244,7 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
             interval = dnf_var_int:substitute(Ints, SubstituteMap),
             tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, Memo),
             function = dnf_var_ty_function:substitute(Functions, SubstituteMap, Memo),
-            map = dnf_var_ty_map:empty() % TODO substitute
+            map = dnf_var_ty_map:substitute(Maps, SubstituteMap, Memo)
           },
           ty_ref:define_ty_ref(RecursiveNewRef, NewTy);
         false ->
@@ -258,7 +253,7 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
             interval = dnf_var_int:substitute(Ints, SubstituteMap),
             tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, OldMemo),
             function = dnf_var_ty_function:substitute(Functions, SubstituteMap, OldMemo),
-            map = dnf_var_ty_map:empty() % TODO substitute
+            map = dnf_var_ty_map:substitute(Maps, SubstituteMap, OldMemo)
           },
           ty_ref:store(NewTy)
       end;
@@ -285,9 +280,26 @@ pi(map, TyRef) ->
   Ty = ty_ref:load(TyRef),
   Ty#ty.map.
 
-pi_all(TyRef) ->
-  Ty = ty_ref:load(TyRef),
-  {Ty#ty.atom, Ty#ty.interval, Ty#ty.tuple, Ty#ty.function, Ty#ty.map}.
+
+-spec to_labels(UnionOfTyVars :: ty_ref() | UnionOfSingletons :: ty_ref()) -> [Label :: b_map:l()].
+to_labels(TyRef) ->
+  #ty{
+    atom = Atoms,
+    interval = Ints,
+    tuple = Tuples,
+    function = Functions,
+    map = Maps
+  } = ty_ref:load(TyRef),
+
+  case {dnf_var_ty_function:empty(), dnf_var_ty_map:empty()} of
+    {Functions, Maps} ->
+      [{atom_key, Ref} || Ref <- dnf_var_ty_atom:to_singletons(Atoms)]
+      ++ [{integer_key, Ref} || Ref <- dnf_var_int:to_singletons(Ints)]
+        ++ [{tuple_key, Ref} || Ref <- dnf_var_ty_tuple:to_singletons(Tuples)];
+    _ ->
+      []
+  end.
+
 
 all_variables(TyRef) ->
   #ty{
@@ -301,8 +313,8 @@ all_variables(TyRef) ->
   lists:usort(dnf_var_ty_atom:all_variables(Atoms)
   ++ dnf_var_int:all_variables(Ints)
   ++ dnf_var_ty_tuple:all_variables(Tuples)
-  ++ dnf_var_ty_function:all_variables(Functions)
-  ++ dnf_var_ty_map:all_variables(Maps)).
+  ++ dnf_var_ty_function:all_variables(Functions))
+  ++ dnf_var_ty_map:all_variables(Maps).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -332,6 +344,22 @@ usage_test() ->
 
   true = ty_rec:is_equivalent(Res, Expected),
 
+  ok.
+
+singleton_test() ->
+  ty_ref:reset(),
+  Atom1 = ty_rec:atom(dnf_var_ty_atom:ty_atom(ty_atom:finite([a]))),
+  Atom2 = ty_rec:atom(dnf_var_ty_atom:ty_atom(ty_atom:finite([b]))),
+  Atoms = ty_rec:union(Atom1, Atom2),
+
+  Int1 = ty_rec:interval(dnf_var_int:int(ty_interval:interval(1, 1))),
+  Int2 = ty_rec:interval(dnf_var_int:int(ty_interval:interval(2, 2))),
+  Ints = ty_rec:interval(dnf_var_int:int(ty_interval:interval(1, 2))),
+
+  Tuple = ty_rec:tuple(Atom1, Int1),
+  Labels = [{atom_key, Atom1}, {atom_key, Atom2}, {integer_key, Int1}, {integer_key, Int2}, {tuple_key, Tuple}],
+
+  [] = Labels -- ty_rec:to_labels(ty_rec:union(Atoms, ty_rec:union(Ints, Tuple))),
   ok.
 
 -endif.

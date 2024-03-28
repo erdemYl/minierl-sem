@@ -1,5 +1,5 @@
 -module(dnf_var_ty_atom).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 -define(P, {ty_atom, ty_variable}).
 
@@ -10,7 +10,7 @@
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([eval/1, is_empty/1, is_any/1, normalize/3, substitute/2]).
 
--export([ty_var/1, ty_atom/1, all_variables/1]).
+-export([ty_var/1, ty_atom/1, all_variables/1, to_singletons/1]).
 
 -type ty_atom() :: term().
 -type ty_variable() :: term(). % variable:type()
@@ -99,3 +99,8 @@ all_variables(0) -> [];
 all_variables({terminal, _}) -> [];
 all_variables({node, Variable, PositiveEdge, NegativeEdge}) ->
 [Variable] ++ all_variables(PositiveEdge) ++ all_variables(NegativeEdge).
+
+
+to_singletons(0) -> [];
+to_singletons({terminal, TyAtom}) -> ty_atom:to_singletons(TyAtom);
+to_singletons({node, _Variable, _, _}) -> [].

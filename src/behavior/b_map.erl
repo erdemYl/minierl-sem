@@ -1,46 +1,35 @@
 -module(b_map).
--vsn({2,2,3}).
+-vsn({2,1,0}).
+
+%% Interpretation: quasi KΩ-step functions
+%% Restricted key domain abstraction: key types can be type variables, but cannot be container types like [A].
 
 -export_type([labels/0, steps/0]).
 
 -type ty_map() :: term().
 -type ty_ref() :: {ty_ref, integer()}.
 
--type labels() :: #{ al() => ty_ref() }.
--type steps()  :: #{ key_tag() := ty_ref() }.
+-type labels() :: #{al() => ty_ref()}.
+-type steps()  :: #{key_tag() := ty_ref()}.
 
 -type al() :: {assoc(), l()}.
--type l()  :: {key_tag() | var_tag(), ty_ref()}.
+-type l() :: {key_tag(), ty_ref()}.
 
--type key_tag() :: atom_key | integer_key | tuple_key.
--type var_tag() :: var_key.
--type assoc()   :: optional | mandatory.
+-type assoc() :: optional | mandatory.
+-type key_tag() :: integer_key | atom_key | tuple_key.
 
 
--callback map(labels(), steps()) -> ty_map().
-% any map behaviour
--callback b_anymap() -> ty_map().
-% 0 type behaviour embedded in map structure (not the empty map!)
--callback b_empty() -> ty_map().
+-callback map(X, steps()) -> ty_map() when
+  X :: #{al() | Y => ty_ref()},
+  Y :: {assoc(), {var_key, ty_ref()}}.
 
--callback b_intersect(ty_map(), ty_map()) -> ty_map().
--callback b_diff(ty_map(), ty_map()) -> ty_map().
+-callback anymap() -> ty_map().
 
-% TODO explain
-% projects a label, without variable context
-% association not used while projecting
 -callback pi(l(), ty_map()) -> {assoc(), ty_ref()}.
+-callback intersect(ty_map(), ty_map()) -> ty_map().
 
-% TODO explain
-% projects a label, with variable context
-% association used while projecting
--callback pi_var(al(), ty_map()) -> ty_ref().
+-callback diff_labels(ty_map(), ty_map()) -> labels().
+-callback diff_steps(ty_map(), ty_map()) -> steps().
+-callback diff_w1(ty_map(), ty_map()) -> ty_ref().
 
--callback pi_tag(key_tag(), ty_map()) -> ty_ref().
-
-% int() | atom() | tuple()
--callback key_domain() -> ty_ref().
-% union of all key types
--callback key_domain(ty_map(), WithVariables :: boolean()) -> ty_ref().
-% union of all value types
--callback value_domain(ty_map()) -> ty_ref().
+-callback key_variable_suite(ty_map()) -> {O1::ty_ref(), O2::ty_ref(), ManKeyVarUnion::ty_ref(), OptKeyVarUnion::ty_ref()}.

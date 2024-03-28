@@ -17,20 +17,12 @@ Open Questions
   * vs tail-recursive
 
 
-Updates
+Update - Map types
 -----
 
-* **Map Subtyping**
-  * **phi** algorithm for *quasi K-step function* decomposition 
-  * K = { integer(), atom(), tuple() }
-
-
-* **News**
-  * ~~implement "**=>**" in structs~~ - **done!**
-  * ~~normalization for maps~~ - **done!**
-  * experimental **unf** maps for type operators
-    * *Typing Records, Maps and Structs*: Theorem 4.2
-    * Needs testing
+* [X] Polymorphism (restricted)
+* [X] Subtyping
+* [X] Constraint normalization for tallying
 
 Roadmap
 -----
@@ -46,12 +38,13 @@ Roadmap
 
 * [x] V2
   * tallying
+  * maps
    
 * [ ] V3
   * types: n-tuples, n-functions
-  * 
+  
 * [ ] V4
-  * types: named, base, lists, bitstrings, records, specials, maps, ...
+  * types: named, base, lists, bitstrings, records, specials, ...
 
 * [ ] V_opt1
   * lazy BDDs

@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2, struct/2, dict/2, opt/1, stp/1]).
+-import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, m/1, man/2, opt/2, step/2, none/0, any/0, v/1, subty/2]).
 
 simple_test_() ->
   Data = lists:map(
@@ -241,170 +241,90 @@ uneven_even_lists_not_comparable_test() ->
 
   ok.
 
-% ====
-% Map tests
-% ====
 
-map_any_empty_test() ->
-  % struct
-  EmptyS = struct([], false), % type that only contains empty struct
-  AnyS = struct([], true),
-  true = subty(EmptyS, AnyS),
-  false = subty(AnyS, EmptyS),
-  false = subty(EmptyS, none()),
+% =====
+% Map Tests
+% =====
 
-  % dict
-  EmptyD = i([
-    dict(stp(i), none()),
-    dict(stp(a), none()),
-    dict(stp(t), none())
+maps_any_empty_test() ->
+  % The one and only representations
+  Empty = m([]),
+  Any = m([step(a, any()), step(i, any()), step(t, any())]),
+
+  true = subty(Empty, Any),
+  false = subty(Any, Empty),
+
+  ok.
+
+maps_steps_test() ->
+  Empty = m([]),
+  AStep = step(a, any()),
+  IStep = step(i, any()),
+  M1 = m([AStep]),
+  M2 = m([IStep]),
+  M3 = m([AStep, IStep]),
+  M4 = m([AStep, IStep, step(t, none())]),
+
+  true = subty(i([M1, M2]), Empty),
+  true = subty(Empty, i([M1, M2])),
+  true = subty(i([M2, M3]), M2),
+  true = subty(M2, i([M2, M3])),
+  true = subty(M3, M4),
+  true = subty(M4, M3),
+
+  ok.
+
+maps_labels1_test() ->
+  % {1 := a, 2 => b, 10 => c}  !≤ ≥!  {1 => a, 2 := b, 3 => c}
+  L = m([
+    man(r(1), b(a)),
+    opt(r(2), b(b)),
+    opt(r(10), b(c))
   ]),
-  % all same, all any map
-  A1 = dict(stp(i), any()),
-  A2 = dict(stp(a), any()),
-  A3 = dict(stp(t), any()),
-  As = [A1, A2, A3],
-
-  true = subty(A1, A3),
-  true = subty(A3, A1),
-  true = lists:all(fun(X) -> subty(AnyS, X) end, As),
-  true = lists:all(fun(X) -> subty(X, AnyS) end, As),
-  true = subty(EmptyS, EmptyD) andalso subty(EmptyD, EmptyS)
-.
-
-dict_interpretation_test() ->
-  S = u([r(1), r(2), r(3)]),
-  T = u([r(1), r(2)]),
-  IntDict = dict(stp(i), S),
-  IntDict2 = dict(stp(i), T),
-  AtomDict = dict(stp(a), S),
-
-  false = subty(IntDict, AtomDict),
-  false = subty(AtomDict, IntDict),
-  true = subty(IntDict2, IntDict)
-.
-
-% D1 = {integer() => T} ∧ {atom() => any()} ∧ {tuple() => none()}  ≤  {integer() => T} = D2
-% D1 !≤ 0
-dict_intersection_test() ->
-  T = r(),
-  D1 = i([
-    dict(stp(i), T),
-    dict(stp(a), any()),
-    dict(stp(t), none())
+  R = m([
+    opt(r(1), b(a)),
+    man(r(2), b(b)),
+    opt(r(3), b(c))
   ]),
-  D2 = dict(stp(i), T),
+  false = subty(L, R),
+  false = subty(L, R),
 
-  true = subty(D1, D2),
-  false = subty(D1, none())
-.
+  ok.
 
-% M1 = {1 := a, 2 := b}  !≤≥!  {atom() => atom} = M2
-% M1 ≤ {tuple() => any()} = M3
-% M2 ≤ {tuple() => any()} = M3
-map_simple_test() ->
-  M1 = struct(
-    [{r(1), b(a)}, {r(2), b(b)}],
-    true),
-  M2 = dict(stp(a), b(atom)),
-  M3 = dict(stp(t), any()),
+maps_labels2_test() ->
+  % {1 => a, _ => none}  ≤ ≥!  {1 => a, 3 => a, _ => none}
+  L = m([
+    opt(r(1), b(a)),
+    step(a, none()), step(i, none()), step(t, none())
+  ]),
+  R = m([
+    opt(r(1), b(a)),
+    opt(r(3), b(a)),
+    step(a, none()), step(i, none()), step(t, none())
+  ]),
+  R2 = m([
+    opt(r(1), b(a)),
+    opt(r(3), b(a)),
+    step(a, none()), step(i, none()), step(t, none())
+  ]),
+  true = subty(L, R),
+  false = subty(R, L),
+  true = subty(R, R2),
+  true = subty(R2, R),
 
-  true = subty(M2, M3),
-  false = subty(M2, M1),
-  false = subty(M1, M2),
-  true = subty(M1, M3),
+  ok.
 
-  M4 = struct(
-    [{r(1), b(a)}, {r(2), b(b)}],
-    false),
+maps_labels3_test() ->
+  % {1 := a, 2 => b}  !≤ ≥!  {1 => a, 2 := b}
+  L = m([
+    man(r(1), b(a)),
+    opt(r(2), b(b))
+  ]),
+  R = m([
+    opt(r(1), b(a)),
+    man(r(2), b(b))
+  ]),
+  false = subty(L, R),
+  false = subty(R, L),
 
-  true = subty(M4, M2),
-  true = subty(M4, M3)
-.
-
-% M1 = {1 := a, 2 := b}  ≤≥!  {1 => a, 2 := b} = M2
-struct_optional1_test() ->
-  M1 = struct(
-    [{r(1), b(a)}, {r(2), b(b)}],
-    true),
-  M2 = struct(
-    [{r(1), opt(b(a))}, {r(2), b(b)}],
-    true),
-
-  true = subty(M1, M2),
-  false = subty(M2, M1)
-.
-
-% M1 = {1 := a, 2 => b}  !≤≥!  {1 => a, 2 := b} = M2
-struct_optional2_test() ->
-  M1 = struct(
-    [{r(1), b(a)}, {r(2), opt(b(b))}],
-    true),
-  M2 = struct(
-    [{r(1), opt(b(a))}, {r(2), b(b)}],
-    true),
-
-  false = subty(M1, M2),
-  false = subty(M2, M1)
-.
-
-% M1 = {1 := a, 2 => b, 10 => c}  !≤≥!  {1 => a, 2 := b, 3 => c} = M2
-struct_optional3_test() ->
-  M1 = struct(
-    [{r(1), b(a)}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
-    true),
-  M2 = struct(
-    [{r(1), opt(b(a))}, {r(2), b(b)}, {r(3), opt(b(c))}],
-    true),
-
-  false = subty(M1, M2),
-  false = subty(M2, M1)
-.
-
-% M1 = {1 => a, 2 => b, 10 => c}  ≤≥!  {1 => a, 2 => b} = M2
-struct_optional4_test() ->
-  M1 = struct(
-    [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
-    true),
-  M2 = struct(
-    [{r(1), opt(b(a))}, {r(2), opt(b(b))}],
-    true),
-
-  true = subty(M1, M2),
-  false = subty(M2, M1)
-.
-
-% M1 = {1 => a, 2 => b, 10 => c}  !≤≥!  {1 => a, 2 => b, 3 := c} = M2
-struct_optional5_test() ->
-  M1 = struct(
-    [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(10), opt(b(c))}],
-    true),
-  M2 = struct(
-    [{r(1), opt(b(a))}, {r(2), opt(b(b))}, {r(3), b(c)}],
-    true),
-
-  false = subty(M1, M2),
-  false = subty(M2, M1)
-.
-
-% M1 = {1 => a, 3 := none, _ => none}  ≤≥!  {1 => a, _ => none} = M2
-map_last_test() ->
-  M1 = struct(
-    [{r(1), opt(b(a))}, {r(3), none()}], false
-  ),
-  M2 = struct(
-    [{r(1), opt(b(a))}], false
-  ),
-
-  true = subty(M1, M2),
-  false = subty(M2, M1)
-.
-
-% #{alpha => int(), _ => any()}  ≤  #{beta => any()}
-%%map_with_vars1_test() ->
-%%  M1 = struct(
-%%    [{v(alpha), opt(r())}], true),
-%%  M2 = struct(
-%%    [{v(beta), opt(any())}], false),
-%%
-%%  true = subty(M1, M2).
+  ok.

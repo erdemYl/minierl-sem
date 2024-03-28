@@ -1,5 +1,5 @@
 -module(ty_atom).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 %% Efficient atom representation
 
@@ -14,7 +14,7 @@
 -behavior(b_atom).
 -export([finite/1, cofinite/1]).
 
--export([normalize/5]).
+-export([normalize/5, to_singletons/1]).
 
 empty() -> {{0, nil}, finite}.
 any() -> {{0, nil}, cofinite}.
@@ -77,3 +77,6 @@ normalize(TyAtom, PVar, NVar, Fixed, M) ->
   ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:atom(dnf_var_ty_atom:ty_var(Var)) end, M).
 
 
+to_singletons({{0, nil}, finite}) -> [];
+to_singletons({Atoms, finite}) -> [ty_rec:atom(dnf_var_ty_atom:ty_atom(finite([A]))) || A <- gb_sets:to_list(Atoms)];
+to_singletons({_, cofinite}) -> error(illegal_state).

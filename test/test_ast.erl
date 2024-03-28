@@ -33,14 +33,16 @@ setup_ets() -> spawn(fun() -> ets:new(?VAR_ETS, [public, named_table]), receive 
 -type ty_any() :: any.
 -type ty_tuple()  :: {tuple, ty(), ty()}.
 -type ty_fun()    :: {'fun', ty(), ty()}.
--type ty_map()    :: ty_map_struct() | ty_map_dict().
-
+-type ty_map()    :: {map, [ty_map_association()]}.
 
 % maps
--type ty_map_struct()     :: {map_struct, [{ty_map_struct_key(), ty()}], IsOpen :: boolean()}.
--type ty_map_dict()       :: {map_dict, ty_map_dict_key(), ty()}.
--type ty_map_struct_key() :: ty_singleton() | {map_struct_key_tuple, [ty_map_struct_key()]}.
--type ty_map_dict_key()   :: integer_key | atom_key | tuple_key.
+-type ty_map_association() :: {ty_map_key(), ty()}.
+-type ty_map_key() ::
+      {man_label | opt_label, ty_singleton()}
+    | {man_label_tuple | opt_label_tuple, [ty_singleton()]}
+    | ty_map_key_step().
+
+-type ty_map_key_step() :: integer_key | atom_key | tuple_key.
 
 
 -type ty_union()        :: {union, ty(), ty()}.
@@ -112,7 +114,6 @@ v(VariableName) -> {var, VariableName}.
 r() -> int.
 r(X) -> {integer, X}.
 
-t() -> tuple.
 t(X, Y) -> {'tuple', X, Y}.
 
 mu(Var, Ty) -> {mu, Var, Ty}.
@@ -133,15 +134,17 @@ i([X,Y | T]) -> {intersection, X, i([Y | T])}.
 n(X) -> {negation, X}.
 
 % map type constructors
-struct(Fields, Open) -> {map_struct, Fields, Open}.
-dict(Step, V) -> {map_dict, Step, V}. % always open or: only given step is restricted
-opt(X) -> u(X, none()). % optional value
-stp(a) -> atom_key;
-stp(i) -> integer_key;
-stp(t) -> tuple_key.
-mt(Xs) -> {map_struct_key_tuple, Xs}.
-empty_step() -> #{stp(i) => none(), stp(a) => none(), stp(t) => none()}.
-any_step() -> #{stp(i) => any(), stp(a) => any(), stp(t) => any()}.
+m(Associations) -> {map, Associations}.
+
+man(Ks, V) when is_list(Ks) -> {{man_label_tuple, Ks}, V};
+man(K, V) -> {{man_label, K}, V}.
+
+opt(Ks, V) when is_list(Ks) -> {{opt_label_tuple, Ks}, V};
+opt(K, V) -> {{opt_label, K}, V}.
+
+step(a, V) -> {atom_key, V};
+step(i, V) -> {integer_key, V};
+step(t, V) -> {tuple_key, V}.
 
 % ==================
 % ast:ty() -> ty_rec:ty_ref()
@@ -181,9 +184,6 @@ norm_cs([{V, Ty1, Ty2} | Cs]) -> constraint_set:constraint_set([
 norm(int) ->
   Int = dnf_var_int:any(),
   ty_rec:interval(Int);
-norm(tuple) ->
-  Tuple = dnf_var_ty_tuple:any(),
-  ty_rec:tuple(Tuple);
 norm(atom) ->
   Atom = dnf_var_ty_atom:any(),
   ty_rec:atom(Atom);
@@ -218,27 +218,16 @@ norm({'fun', A, B}) ->
 
   T = dnf_var_ty_function:function(dnf_ty_function:function(ty_function:function(TyA, TyB))),
   ty_rec:function(T);
-norm({map_struct, Fields, IsOpen}) ->
-  StMappings = norm_(case IsOpen of true -> any_step(); _ -> empty_step() end),
-  LbMappings = #{
-    begin
-      % optional ~ Ty ∨ none
-      % mandatory ~ Ty
-      Assoc = case ValTy of {union, _Ty, none} -> optional; _ -> mandatory end,
-      {Assoc, norm_(Lb)} end => norm(ValTy) || {Lb, ValTy} <- Fields},
+norm({map, As}) ->
+  Normed = lists:map(fun norm_/1, As),
+  {Lbs, Sts} = lists:partition(fun({{_, {_, _}}, _}) -> true; ({_, _}) -> false  end, Normed),
 
-  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(LbMappings, StMappings))),
-  ty_rec:map(T);
-norm({map_dict, Step, ValTy}) ->
-  LbMappings = #{},
-  StMappings = (norm_(any_step()))#{Step := norm(ValTy)},  % dict always open ~ any step
+  EmptySteps = maps:from_keys([atom_key, integer_key, tuple_key], ty_rec:empty()),
+  Labels = maps:from_list(Lbs),
+  Steps = maps:merge(EmptySteps, maps:from_list(Sts)),
 
-  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(LbMappings, StMappings))),
+  T = dnf_var_ty_map:map(dnf_ty_map:map(ty_map:map(Labels, Steps))),
   ty_rec:map(T);
-norm({map_struct_key_tuple, Tys}) ->
-  [Ty1, Ty2 | TyRest] = [norm(T) || T <- lists:reverse(Tys)],
-  Tuple = lists:foldl(fun(E, Acc) -> {tuple, E, Acc} end, {tuple, Ty2, Ty1}, TyRest),  % nested tuple
-  norm(Tuple);
 norm({integer, I}) ->
   Int = dnf_var_int:int(ty_interval:interval(I, I)),
   ty_rec:interval(Int);
@@ -248,11 +237,20 @@ norm({union, A, B}) -> ty_rec:union(norm(A), norm(B));
 norm({intersection, A, B}) -> ty_rec:intersect(norm(A), norm(B));
 norm({negation, A}) -> ty_rec:negate(norm(A)).
 
-norm_(L = {atom, _}) -> {atom_key, norm(L)};
-norm_(L = {integer, _}) -> {integer_key, norm(L)};
-norm_(L = {map_struct_key_tuple, _}) -> {tuple_key, norm(L)};
-norm_(L = {var, _}) -> {var_key, norm(L)};
-norm_(#{} = Steps) -> #{St => norm(Ty) || St := Ty <- Steps}.
+
+norm_({{man_label, K}, V}) -> {{mandatory, norm__(K)}, norm(V)};
+norm_({{opt_label, K}, V}) -> {{optional, norm__(K)}, norm(V)};
+norm_({{man_label_tuple, K}, V}) -> {{mandatory, norm__(K)}, norm(V)};
+norm_({{opt_label_tuple, K}, V}) -> {{mandatory, norm__(K)}, norm(V)};
+norm_({Step, V}) -> {Step, norm(V)}.
+
+norm__(K = {atom, _}) -> {atom_key, norm(K)};
+norm__(K = {integer, _}) -> {integer_key, norm(K)};
+norm__(K = {var, _}) -> {var_key, norm(K)};
+norm__(Tys) ->
+  [Ty1, Ty2 | TyRest] = [norm(T) || T <- lists:reverse(Tys)],
+  Tuple = lists:foldl(fun(E, Acc) -> {tuple, E, Acc} end, {tuple, Ty2, Ty1}, TyRest),  % nested tuple
+  {tuple_key, norm(Tuple)}.
 
 
 var_of({var, Name}) -> maybe_new_variable(Name).

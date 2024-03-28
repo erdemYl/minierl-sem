@@ -1,5 +1,5 @@
 -module(ty_interval).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 %% Efficient interval representation
 
@@ -9,7 +9,7 @@
 -behavior(type).
 -export([empty/0, any/0]).
 -export([union/2, intersect/2, diff/2, negate/1, is_any/1]).
--export([is_empty/1, eval/1, normalize/5]).
+-export([is_empty/1, eval/1, normalize/5, to_singletons/1]).
 
 -behavior(b_interval).
 -export([interval/2, cointerval/2]).
@@ -131,6 +131,11 @@ normalize(TyInterval, PVar, NVar, Fixed, M) ->
     Ty = ty_rec:interval(dnf_var_int:int(TyInterval)),
     % ntlv rule
     ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:interval(dnf_var_int:var(Var)) end, M).
+
+
+to_singletons([]) -> [];
+to_singletons([{range, A, B} | Ints]) -> [ty_rec:interval(dnf_var_int:int(interval(X, X))) || X <- lists:seq(A, B)] ++ to_singletons(Ints);
+to_singletons(_) -> error(illegal_state).
 
 
 -ifdef(TEST).
