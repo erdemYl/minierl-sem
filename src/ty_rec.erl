@@ -1,5 +1,5 @@
 -module(ty_rec).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 -behavior(type).
 -export([empty/0, any/0]).
@@ -7,17 +7,17 @@
 -export([is_empty/1, eval/1]).
 
 % additional type constructors
--export([function/1, variable/1, atom/1, interval/1, tuple/1]).
+-export([function/1, variable/1, atom/1, interval/1, tuple/1, map/1]).
 % type constructors with type refs
 -export([function/2, tuple/2]).
 % top type constructors
--export([function/0, atom/0, interval/0, tuple/0]).
+-export([function/0, atom/0, interval/0, tuple/0, map/0]).
 
 -export([is_equivalent/2, is_subtype/2, normalize/3]).
 
--export([substitute/2, substitute/3, pi/2, all_variables/1]).
+-export([substitute/2, substitute/3, pi/2, all_variables/1, to_labels/1]).
 
--record(ty, {atom, interval, tuple, function}).
+-record(ty, {atom, interval, tuple, function, map}).
 
 -type ty_ref() :: {ty_ref, integer()}.
 -type interval() :: term().
@@ -25,6 +25,7 @@
 -type ty_function() :: term().
 -type ty_variable() :: term().
 -type ty_atom() :: term().
+-type ty_map() :: term().
 
 
 % ======
@@ -49,7 +50,8 @@ empty() ->
     atom = dnf_var_ty_atom:empty(),
     interval = dnf_var_int:empty(),
     tuple = dnf_var_ty_tuple:empty(),
-    function = dnf_var_ty_function:empty()
+    function = dnf_var_ty_function:empty(),
+    map = dnf_var_ty_map:empty()
   }).
 
 -spec any() -> ty_ref().
@@ -64,7 +66,8 @@ variable(Var) ->
     atom = dnf_var_ty_atom:intersect(Any#ty.atom, dnf_var_ty_atom:ty_var(Var)),
     interval = dnf_var_int:intersect(Any#ty.interval, dnf_var_int:var(Var)),
     tuple = dnf_var_ty_tuple:intersect(Any#ty.tuple, dnf_var_ty_tuple:var(Var)),
-    function = dnf_var_ty_function:intersect(Any#ty.function, dnf_var_ty_function:var(Var))
+    function = dnf_var_ty_function:intersect(Any#ty.function, dnf_var_ty_function:var(Var)),
+    map = dnf_var_ty_map:intersect(Any#ty.map, dnf_var_ty_map:var(Var))
   }).
 
 -spec atom(ty_atom()) -> ty_ref().
@@ -112,29 +115,39 @@ function(Fun) ->
 function() ->
   function(dnf_var_ty_function:any()).
 
+-spec map(ty_map()) -> ty_ref().
+map(Map) ->
+  Empty = ty_ref:load(empty()),
+  ty_ref:store(Empty#ty{ map = Map }).
+
+-spec map() -> ty_ref().
+map() -> map(dnf_var_ty_map:any()).
+
 % ======
 % Boolean operations
 % ======
 
 -spec intersect(ty_ref(), ty_ref()) -> ty_ref().
 intersect(TyRef1, TyRef2) ->
-  #ty{atom = A1, interval = I1, tuple = P1, function = F1} = ty_ref:load(TyRef1),
-  #ty{atom = A2, interval = I2, tuple = P2, function = F2} = ty_ref:load(TyRef2),
+  #ty{atom = A1, interval = I1, tuple = P1, function = F1, map = M1} = ty_ref:load(TyRef1),
+  #ty{atom = A2, interval = I2, tuple = P2, function = F2, map = M2} = ty_ref:load(TyRef2),
   ty_ref:store(#ty{
     atom = dnf_var_ty_atom:intersect(A1, A2),
     interval = dnf_var_int:intersect(I1, I2),
     tuple = dnf_var_ty_tuple:intersect(P1, P2),
-    function = dnf_var_ty_function:intersect(F1, F2)
+    function = dnf_var_ty_function:intersect(F1, F2),
+    map = dnf_var_ty_map:intersect(M1, M2)
   }).
 
 -spec negate(ty_ref()) -> ty_ref().
 negate(TyRef1) ->
-  #ty{atom = A1, interval = I1, tuple = P1, function = F1} = ty_ref:load(TyRef1),
+  #ty{atom = A1, interval = I1, tuple = P1, function = F1, map = M1} = ty_ref:load(TyRef1),
   ty_ref:store(#ty{
     atom = dnf_var_ty_atom:negate(A1),
     interval = dnf_var_int:negate(I1),
     tuple = dnf_var_ty_tuple:negate(P1),
-    function = dnf_var_ty_function:negate(F1)
+    function = dnf_var_ty_function:negate(F1),
+    map = dnf_var_ty_map:negate(M1)
   }).
 
 -spec diff(ty_ref(), ty_ref()) -> ty_ref().
@@ -165,6 +178,7 @@ is_empty_miss(TyRef) ->
             ok = ty_ref:memoize(TyRef),
             dnf_var_ty_tuple:is_empty(Ty#ty.tuple)
               andalso dnf_var_ty_function:is_empty(Ty#ty.function)
+              andalso dnf_var_ty_map:is_empty(Ty#ty.map)
         end
       end
   ).
@@ -195,7 +209,13 @@ normalize(TyRef, Fixed, M) ->
                   [] -> [];
                   _ ->
                     Res4 = dnf_var_ty_function:normalize(Ty#ty.function, Fixed, M),
-                    constraint_set:merge_and_meet(Res3, Res4)
+                    Res5 = constraint_set:merge_and_meet(Res3, Res4),
+                    case Res5 of
+                      [] -> [];
+                      _ ->
+                        MapNormalize = dnf_var_ty_map:normalize(Ty#ty.map, Fixed, M),
+                        constraint_set:merge_and_meet(Res5, MapNormalize)
+                    end
                 end
           end
       end
@@ -211,7 +231,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
         atom = Atoms,
         interval = Ints,
         tuple = Tuples,
-        function = Functions
+        function = Functions,
+        map = Maps
       } = ty_ref:load(TyRef),
 
       case has_ref(Ty, TyRef) of
@@ -222,7 +243,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
             atom = dnf_var_ty_atom:substitute(Atoms, SubstituteMap),
             interval = dnf_var_int:substitute(Ints, SubstituteMap),
             tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, Memo),
-            function = dnf_var_ty_function:substitute(Functions, SubstituteMap, Memo)
+            function = dnf_var_ty_function:substitute(Functions, SubstituteMap, Memo),
+            map = dnf_var_ty_map:substitute(Maps, SubstituteMap, Memo)
           },
           ty_ref:define_ty_ref(RecursiveNewRef, NewTy);
         false ->
@@ -230,7 +252,8 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
             atom = dnf_var_ty_atom:substitute(Atoms, SubstituteMap),
             interval = dnf_var_int:substitute(Ints, SubstituteMap),
             tuple = dnf_var_ty_tuple:substitute(Tuples, SubstituteMap, OldMemo),
-            function = dnf_var_ty_function:substitute(Functions, SubstituteMap, OldMemo)
+            function = dnf_var_ty_function:substitute(Functions, SubstituteMap, OldMemo),
+            map = dnf_var_ty_map:substitute(Maps, SubstituteMap, OldMemo)
           },
           ty_ref:store(NewTy)
       end;
@@ -252,20 +275,46 @@ pi(tuple, TyRef) ->
   Ty#ty.tuple;
 pi(function, TyRef) ->
   Ty = ty_ref:load(TyRef),
-  Ty#ty.function.
+  Ty#ty.function;
+pi(map, TyRef) ->
+  Ty = ty_ref:load(TyRef),
+  Ty#ty.map.
+
+
+-spec to_labels(UnionOfTyVars :: ty_ref() | UnionOfSingletons :: ty_ref()) -> [Label :: b_map:l()].
+to_labels(TyRef) ->
+  #ty{
+    atom = Atoms,
+    interval = Ints,
+    tuple = Tuples,
+    function = Functions,
+    map = Maps
+  } = ty_ref:load(TyRef),
+
+  case {dnf_var_ty_function:empty(), dnf_var_ty_map:empty()} of
+    {Functions, Maps} ->
+      [{atom_key, Ref} || Ref <- dnf_var_ty_atom:to_singletons(Atoms)]
+      ++ [{integer_key, Ref} || Ref <- dnf_var_int:to_singletons(Ints)]
+        ++ [{tuple_key, Ref} || Ref <- dnf_var_ty_tuple:to_singletons(Tuples)];
+    _ ->
+      []
+  end.
+
 
 all_variables(TyRef) ->
   #ty{
     atom = Atoms,
     interval = Ints,
     tuple = Tuples,
-    function = Functions
+    function = Functions,
+    map = Maps
   } = ty_ref:load(TyRef),
 
   lists:usort(dnf_var_ty_atom:all_variables(Atoms)
   ++ dnf_var_int:all_variables(Ints)
   ++ dnf_var_ty_tuple:all_variables(Tuples)
-  ++ dnf_var_ty_function:all_variables(Functions)).
+  ++ dnf_var_ty_function:all_variables(Functions))
+  ++ dnf_var_ty_map:all_variables(Maps).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -295,6 +344,22 @@ usage_test() ->
 
   true = ty_rec:is_equivalent(Res, Expected),
 
+  ok.
+
+singleton_test() ->
+  ty_ref:reset(),
+  Atom1 = ty_rec:atom(dnf_var_ty_atom:ty_atom(ty_atom:finite([a]))),
+  Atom2 = ty_rec:atom(dnf_var_ty_atom:ty_atom(ty_atom:finite([b]))),
+  Atoms = ty_rec:union(Atom1, Atom2),
+
+  Int1 = ty_rec:interval(dnf_var_int:int(ty_interval:interval(1, 1))),
+  Int2 = ty_rec:interval(dnf_var_int:int(ty_interval:interval(2, 2))),
+  Ints = ty_rec:interval(dnf_var_int:int(ty_interval:interval(1, 2))),
+
+  Tuple = ty_rec:tuple(Atom1, Int1),
+  Labels = [{atom_key, Atom1}, {atom_key, Atom2}, {integer_key, Int1}, {integer_key, Int2}, {tuple_key, Tuple}],
+
+  [] = Labels -- ty_rec:to_labels(ty_rec:union(Atoms, ty_rec:union(Ints, Tuple))),
   ok.
 
 -endif.

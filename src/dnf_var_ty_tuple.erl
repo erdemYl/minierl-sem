@@ -1,5 +1,5 @@
 -module(dnf_var_ty_tuple).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 -define(P, {dnf_ty_tuple, ty_variable}).
 
@@ -10,7 +10,7 @@
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([eval/1, is_empty/1, is_any/1, normalize/3, substitute/3]).
 
--export([var/1, tuple/1, all_variables/1, has_ref/2]).
+-export([var/1, tuple/1, all_variables/1, has_ref/2, to_singletons/1]).
 
 -type dnf_tuple() :: term().
 -type ty_tuple() :: dnf_tuple(). % ty_tuple:type()
@@ -106,6 +106,11 @@ all_variables(0) -> [];
 all_variables({terminal, Tuple}) -> dnf_ty_tuple:all_variables(Tuple);
 all_variables({node, Variable, PositiveEdge, NegativeEdge}) ->
   [Variable] ++ all_variables(PositiveEdge) ++ all_variables(NegativeEdge).
+
+
+to_singletons(0) -> [];
+to_singletons({terminal, TyTuple}) -> dnf_ty_tuple:to_singletons(TyTuple);
+to_singletons({node, _Variable, _, _}) -> [].
 
 
 -ifdef(TEST).

@@ -1,5 +1,5 @@
 -module(dnf_ty_tuple).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 -define(P, {bdd_bool, ty_tuple}).
 -define(F(Z), fun() -> Z end).
@@ -11,7 +11,7 @@
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([eval/1, is_empty/1, is_any/1, normalize/5, substitute/3]).
 
--export([tuple/1, all_variables/1, has_ref/2]).
+-export([tuple/1, all_variables/1, has_ref/2, to_singletons/1]).
 
 -type dnf_tuple() :: term().
 -type ty_tuple() :: dnf_tuple(). % ty_tuple:type()
@@ -149,6 +149,32 @@ all_variables({node, Tuple, PositiveEdge, NegativeEdge}) ->
     ++ all_variables(PositiveEdge)
     ++ all_variables(NegativeEdge).
 
+
+to_singletons(TyBDD) ->
+  LeftReduce =
+    fun L(0, _, _) -> sets:new();
+        L({terminal, 1}, Tuple, _) ->
+          sets:from_list([ty_rec:tuple(dnf_var_ty_tuple:tuple(tuple(Tuple)))]);
+        L(BDD, Tuple, R) ->
+          S = sets:from_list([dnf_var_ty_tuple:tuple(tuple(Tuple))]),
+          sets:intersection(to_singletons(BDD, L, R), S)
+    end,
+  RightReduce =
+    fun R(0, _, _) -> sets:new();
+        R({terminal, 1}, _, _) -> sets:new();
+        R(BDD, Tuple, L) ->
+          S = sets:from_list([ty_rec:tuple(dnf_var_ty_tuple:tuple(tuple(Tuple)))]),
+          sets:subtract(to_singletons(BDD, L, R), S)
+    end,
+
+  sets:to_list(to_singletons(TyBDD, LeftReduce, RightReduce)).
+
+to_singletons(0, _L, _R) -> sets:new();
+to_singletons({terminal, 1}, _L, _R) -> sets:new();
+to_singletons({node, TyTuple, L_BDD, R_BDD}, L, R) ->
+  S1 = L(L_BDD, TyTuple, R),
+  S2 = R(R_BDD, TyTuple, L),
+  sets:subtract(S1, S2).
 
 
 -ifdef(TEST).

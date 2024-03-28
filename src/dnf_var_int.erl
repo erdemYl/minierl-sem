@@ -1,5 +1,5 @@
 -module(dnf_var_int).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 -define(P, {ty_interval, ty_variable}).
 
@@ -10,7 +10,7 @@
 -export([empty/0, any/0, union/2, intersect/2, diff/2, negate/1]).
 -export([eval/1, is_empty/1, is_any/1, normalize/3, substitute/2]).
 
--export([var/1, int/1,  all_variables/1]).
+-export([var/1, int/1,  all_variables/1, to_singletons/1]).
 
 -type interval() :: term(). % interval:type()
 -type variable() :: term(). % variable:type()
@@ -100,6 +100,10 @@ all_variables({terminal, _}) -> [];
 all_variables({node, Variable, PositiveEdge, NegativeEdge}) ->
   [Variable] ++ all_variables(PositiveEdge) ++ all_variables(NegativeEdge).
 
+
+to_singletons(0) -> [];
+to_singletons({terminal, TyInt}) -> ty_interval:to_singletons(TyInt);
+to_singletons({node, _Variable, _, _}) -> [].
 
 
 -ifdef(TEST).

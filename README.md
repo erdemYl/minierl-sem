@@ -8,7 +8,7 @@ Build
 
     $ rebar3 compile
 
- 
+
 Open Questions
 -----
 
@@ -16,6 +16,13 @@ Open Questions
   * e.g. `rec_fun() andalso rec_fun() andalso rec_fun()`
   * vs tail-recursive
 
+
+Update - Map types
+-----
+
+* [X] Polymorphism (restricted)
+* [X] Subtyping
+* [X] Constraint normalization for tallying
 
 Roadmap
 -----
@@ -31,12 +38,13 @@ Roadmap
 
 * [x] V2
   * tallying
-   
+  * maps
+
 * [ ] V3
   * types: n-tuples, n-functions
-  * 
+
 * [ ] V4
-  * types: named, base, lists, bitstrings, records, specials, maps, ...
+  * types: named, base, lists, bitstrings, records, specials, ...
 
 * [ ] V_opt1
   * lazy BDDs

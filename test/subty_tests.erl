@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, none/0, any/0, v/1, subty/2]).
+-import(test_ast, [mu/2, n/1, b/1, f/2, t/2, i/2, i/1, u/2, u/1, r/1, r/0, m/1, man/2, opt/2, step/2, none/0, any/0, v/1, subty/2]).
 
 simple_test_() ->
   Data = lists:map(
@@ -238,5 +238,93 @@ uneven_even_lists_not_comparable_test() ->
 
   false = subty(Even, Uneven),
   false = subty(Uneven, Even),
+
+  ok.
+
+
+% =====
+% Map Tests
+% =====
+
+maps_any_empty_test() ->
+  % The one and only representations
+  Empty = m([]),
+  Any = m([step(a, any()), step(i, any()), step(t, any())]),
+
+  true = subty(Empty, Any),
+  false = subty(Any, Empty),
+
+  ok.
+
+maps_steps_test() ->
+  Empty = m([]),
+  AStep = step(a, any()),
+  IStep = step(i, any()),
+  M1 = m([AStep]),
+  M2 = m([IStep]),
+  M3 = m([AStep, IStep]),
+  M4 = m([AStep, IStep, step(t, none())]),
+
+  true = subty(i([M1, M2]), Empty),
+  true = subty(Empty, i([M1, M2])),
+  true = subty(i([M2, M3]), M2),
+  true = subty(M2, i([M2, M3])),
+  true = subty(M3, M4),
+  true = subty(M4, M3),
+
+  ok.
+
+maps_labels1_test() ->
+  % {1 := a, 2 => b, 10 => c}  !≤ ≥!  {1 => a, 2 := b, 3 => c}
+  L = m([
+    man(r(1), b(a)),
+    opt(r(2), b(b)),
+    opt(r(10), b(c))
+  ]),
+  R = m([
+    opt(r(1), b(a)),
+    man(r(2), b(b)),
+    opt(r(3), b(c))
+  ]),
+  false = subty(L, R),
+  false = subty(L, R),
+
+  ok.
+
+maps_labels2_test() ->
+  % {1 => a, _ => none}  ≤ ≥!  {1 => a, 3 => a, _ => none}
+  L = m([
+    opt(r(1), b(a)),
+    step(a, none()), step(i, none()), step(t, none())
+  ]),
+  R = m([
+    opt(r(1), b(a)),
+    opt(r(3), b(a)),
+    step(a, none()), step(i, none()), step(t, none())
+  ]),
+  R2 = m([
+    opt(r(1), b(a)),
+    opt(r(3), b(a)),
+    step(a, none()), step(i, none()), step(t, none())
+  ]),
+  true = subty(L, R),
+  false = subty(R, L),
+  true = subty(R, R2),
+  true = subty(R2, R),
+
+  ok.
+
+maps_labels3_test() ->
+  % {1 := a, 2 => b}  !≤ ≥!  {1 => a, 2 := b}
+  L = m([
+    man(r(1), b(a)),
+    opt(r(2), b(b))
+  ]),
+  R = m([
+    opt(r(1), b(a)),
+    man(r(2), b(b))
+  ]),
+  false = subty(L, R),
+  false = subty(R, L),
 
   ok.

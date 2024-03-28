@@ -1,5 +1,5 @@
 -module(ty_variable).
--vsn({2,0,0}).
+-vsn({2,1,0}).
 
 % ETS table is used to strict monotonically increment a variable ID counter
 -on_load(setup_ets/0).
@@ -61,11 +61,17 @@ normalize(Ty, PVar, NVar, Fixed, VarToTy, Mx) ->
   case SmallestVar of
     {{pos, Var}, Others} ->
       % io:format(user, "Single out positive Variable ~p and Rest: ~p~n", [Var, Others]),
-      TyResult = lists:foldl(fun({_, V}, CTy) -> ty_rec:intersect(CTy, VarToTy(V)) end, Ty, Others),
+      TyResult = lists:foldl(
+        fun({pos, V}, CTy) -> ty_rec:intersect(CTy, VarToTy(V));
+          ({neg, V}, CTy) -> ty_rec:intersect(CTy, ty_rec:negate(VarToTy(V))) end, Ty, Others),
+
       [[{Var, ty_rec:empty(), ty_rec:negate(TyResult)}]];
     {{neg, Var}, Others} ->
       % io:format(user, "Single out negative Variable ~p and Rest: ~p~n", [Var, Others]),
-      TyResult = lists:foldl(fun({_, V}, CTy) -> ty_rec:intersect(CTy, VarToTy(V)) end, Ty, Others),
+      TyResult = lists:foldl(
+        fun({pos, V}, CTy) -> ty_rec:intersect(CTy, VarToTy(V));
+          ({neg, V}, CTy) -> ty_rec:intersect(CTy, ty_rec:negate(VarToTy(V))) end, Ty, Others),
+
       [[{Var, TyResult, ty_rec:any()}]];
     {{delta, _}, _} ->
       % io:format(user, "Normalize all fixed variables done! ~p~n", [Ty]),
